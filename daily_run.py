@@ -14,9 +14,7 @@ ROOT = Path(__file__).resolve().parent
 
 def run(label, cmd_list):
     print(f"\n▶️  {label}")
-    rc = subprocess.run([sys.executable, *cmd_list]).returncode
-    if rc != 0:
-        print(f"❌ ERRORE in step: {label}")
+    rc = subprocess.run([sys.executable, *cmd_list])
         sys.exit(rc)
     print(f"✅ {label} completato")
 
@@ -48,3 +46,46 @@ print("✅ Build features completato")
 
 if __name__ == "__main__":
     main()
+# daily_run.py
+"""
+Pipeline giornaliera NBA 2025–26:
+1. update partite (data_updater_2526.py)
+2. build features complete (build_features_2526.py)
+3. esegui modello principale (main_nba.py)
+"""
+
+import sys
+import subprocess
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent
+
+
+def run(label, cmd_list):
+    print(f"\n▶️  {label}")
+    rc = subprocess.run([sys.executable, *cmd_list]).returncode
+    if rc != 0:
+        print(f"❌ ERRORE in step: {label}")
+        sys.exit(rc)
+    print(f"✅ {label} completato")
+
+
+def main():
+    print("\n▶️ Avvio pipeline giornaliera NBA 2025–26")
+
+    # 1️⃣ Aggiornamento partite
+    run("Aggiornamento partite", [str(ROOT / "data_updater_2526.py")])
+
+    # 2️⃣ Costruzione feature set
+    run("Build feature set", [str(ROOT / "build_features_2526.py")])
+
+    # 3️⃣ Esecuzione modello principale
+    run("Esecuzione modello principale", [str(ROOT / "main_nba.py")])
+
+    print("\n✅ Pipeline completata con successo!")
+
+
+if __name__ == "__main__":
+    main()
+
+
