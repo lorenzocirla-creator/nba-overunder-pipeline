@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+
+# Virtual environments
+venv/
+.env/
+.envrc
+
+# Logs
+*.log
+logs/
+
+# Data and outputs
+*.csv
+*.xlsx
+*.parquet
+*.db
+dati/
+dati_2025_2026/
+outputs/
+
+# System files
+.DS_Store
+Thumbs.db
+
+
