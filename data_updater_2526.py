@@ -11,9 +11,12 @@ Master:
 
 import sys
 import datetime as dt
+import time
 import pandas as pd
 from pathlib import Path
+from requests.exceptions import ReadTimeout, ConnectionError
 from nba_api.stats.endpoints import scoreboardv2
+from nba_api.library.http import NBAStatsHTTP
 
 from config_season_2526 import (
     in_season,
@@ -23,6 +26,9 @@ from config_season_2526 import (
     SEASON_START,
     SEASON_END,
 )
+
+# Imposta un timeout globale più lungo per tutte le chiamate NBA API
+NBAStatsHTTP.TIMEOUT = 90
 
 MASTER_G = path_dataset_raw()   # game header master
 MASTER_S = path_schedule_raw()  # line score master
@@ -35,6 +41,7 @@ LS_COLS = [
     "TEAM_NAME", "PTS"
 ]
 
+
 def ensure_master_files():
     MASTER_G.parent.mkdir(parents=True, exist_ok=True)
     RAW_DIR.mkdir(parents=True, exist_ok=True)
@@ -46,25 +53,41 @@ def ensure_master_files():
         pd.DataFrame(columns=LS_COLS).to_csv(MASTER_S, index=False)
         print(f"📂 Creato master vuoto: {MASTER_S}")
 
+
+def safe_scoreboard_request(day: dt.date):
+    """Esegue la chiamata a scoreboardv2 con retry automatico in caso di timeout."""
+    for attempt in range(3):
+        try:
+            sb = scoreboardv2.ScoreboardV2(game_date=day.strftime("%m/%d/%Y"), timeout=90)
+            return sb
+        except (ReadTimeout, ConnectionError) as e:
+            print(f"⚠️ Timeout NBA API ({type(e).__name__}) – tentativo {attempt + 1}/3")
+            if attempt < 2:
+                time.sleep(10)
+            else:
+                print("❌ Errore persistente, salto questo giorno.")
+                return None
+    return None
+
+
 def fetch_gh(day: dt.date) -> pd.DataFrame:
-    sb = scoreboardv2.ScoreboardV2(
-    game_date=day.strftime("%m/%d/%Y"),
-    timeout=90  # aumenta timeout a 90 secondi
-    )
+    sb = safe_scoreboard_request(day)
+    if sb is None:
+        return pd.DataFrame(columns=GH_COLS)
     df = sb.game_header.get_data_frame()
     if not df.empty:
-        # tieni solo colonne utili (se alcune mancano, riempi)
         for c in GH_COLS:
             if c not in df.columns:
                 df[c] = pd.NA
         df = df[GH_COLS].copy()
-        # normalizza data a YYYY-MM-DD
-        if "GAME_DATE_EST" in df.columns:
-            df["GAME_DATE_EST"] = pd.to_datetime(df["GAME_DATE_EST"]).dt.date.astype(str)
+        df["GAME_DATE_EST"] = pd.to_datetime(df["GAME_DATE_EST"]).dt.date.astype(str)
     return df
 
+
 def fetch_ls(day: dt.date) -> pd.DataFrame:
-    sb = scoreboardv2.ScoreboardV2(game_date=day.strftime("%m/%d/%Y"))
+    sb = safe_scoreboard_request(day)
+    if sb is None:
+        return pd.DataFrame(columns=LS_COLS)
     df = sb.line_score.get_data_frame()
     if not df.empty:
         for c in LS_COLS:
@@ -72,6 +95,7 @@ def fetch_ls(day: dt.date) -> pd.DataFrame:
                 df[c] = pd.NA
         df = df[LS_COLS].copy()
     return df
+
 
 def append_master(df: pd.DataFrame, master_path: Path, subset_cols):
     if df is None or df.empty:
@@ -82,12 +106,14 @@ def append_master(df: pd.DataFrame, master_path: Path, subset_cols):
     combo.to_csv(master_path, index=False)
     return True
 
+
 def dump_raw(df: pd.DataFrame, day: dt.date, suffix: str):
     if df is None or df.empty:
         return None
     p = RAW_DIR / f"{day.strftime('%Y%m%d')}_{suffix}.csv"
     df.to_csv(p, index=False)
     return p
+
 
 def update_for_day(day: dt.date, label: str):
     if not in_season(day):
@@ -108,12 +134,14 @@ def update_for_day(day: dt.date, label: str):
         print("   raw salvato:", d2.name)
     append_master(ls, MASTER_S, subset_cols=["GAME_ID", "TEAM_ID"])
 
+
 def update_yesterday_and_today():
     today = dt.date.today()
     yesterday = today - dt.timedelta(days=1)
     ensure_master_files()
     update_for_day(yesterday, "IERI")
     update_for_day(today, "OGGI")
+
 
 if __name__ == "__main__":
     if len(sys.argv) == 2:
