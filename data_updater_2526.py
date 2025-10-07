@@ -47,7 +47,10 @@ def ensure_master_files():
         print(f"📂 Creato master vuoto: {MASTER_S}")
 
 def fetch_gh(day: dt.date) -> pd.DataFrame:
-    sb = scoreboardv2.ScoreboardV2(game_date=day.strftime("%m/%d/%Y"))
+    sb = scoreboardv2.ScoreboardV2(
+    game_date=day.strftime("%m/%d/%Y"),
+    timeout=90  # aumenta timeout a 90 secondi
+    )
     df = sb.game_header.get_data_frame()
     if not df.empty:
         # tieni solo colonne utili (se alcune mancano, riempi)
