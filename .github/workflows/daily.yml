@@ -1,0 +1,38 @@
+name: NBA Daily Run
+
+on:
+  schedule:
+    - cron: "0 7 * * *"   # ogni giorno alle 07:00 UTC (~09:00 Italia)
+  workflow_dispatch:       # esecuzione manuale da GitHub Actions
+
+jobs:
+  run-daily:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+
+      - name: Run daily pipeline
+        run: |
+          python daily_run.py
+
+      - name: Commit results
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add outputs/ || true
+          git commit -m "📈 Daily NBA update $(date +'%Y-%m-%d')" || true
+          git push || true
+
+
+
