@@ -18,6 +18,14 @@ def run(label, cmd_list):
         sys.exit(rc)
     print(f"✅ {label} completato")
 
+def run(label, cmd_list):
+    print(f"\n▶️  {label}")
+    rc = subprocess.run([sys.executable, *cmd_list]).returncode
+    if rc != 0:
+        print(f"❌ ERRORE in step: {label}")
+        sys.exit(rc)
+    print(f"✅ {label} completato")
+
 def main():
     # 1) Aggiornamento partite
     run("Aggiornamento partite", [str(ROOT / "data_updater_2526.py")])
@@ -87,5 +95,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
