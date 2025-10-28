@@ -8,8 +8,9 @@ columns: DATE;GAME;PREDICTED_POINTS;TOTAL_POINTS;DIFF;GAME_ID
 - Tiene solo partite con IS_FINAL=True e TOTAL_POINTS non NaN
 - Appende solo le nuove (dedupe per GAME_ID), preservando le esistenti
 - Ordina per DATE, GAME_ID
-- Alla fine del file aggiunge 2 righe vuote + la riga di sintesi:
-  "Partite con |diff| < 5 pt: X / N (Y%)"
+- Alla fine del file aggiunge 2 righe vuote + righe di sintesi (prefissate con '# ' per
+  essere ignorate alla prossima lettura):
+  "Partite con |diff| < X pt: H / N (Y%)" per X in [5, 12, 13, 14, 15]
 """
 
 from pathlib import Path
@@ -25,16 +26,12 @@ PRED_DIR = ROOT / "predictions"
 DATASET_REGULAR = DATA_DIR / "dataset_regular_2025_26.csv"
 OUT_FILE = PRED_DIR / "stats_predictions_vs_results.csv"
 
-
 # colonne output (in questo ordine)
 OUT_COLS = ["DATE", "GAME", "PREDICTED_POINTS", "TOTAL_POINTS", "DIFF", "GAME_ID"]
 
+
 def _read_predictions_all_days() -> pd.DataFrame:
-    """
-    Legge tutte le predizioni disponibili: predictions_today_*.csv
-    Supporta sia file con sole colonne base, sia file con FINAL/CLOSING/CURRENT/BASE_LINE.
-    Torna DF con colonne minime: DATE, HOME_TEAM, AWAY_TEAM, PREDICTED_POINTS.
-    """
+    """Legge tutte le predizioni predictions_today_*.csv e normalizza."""
     files = sorted(glob.glob(str(PRED_DIR / "predictions_today_*.csv")))
     if not files:
         return pd.DataFrame(columns=["DATE", "HOME_TEAM", "AWAY_TEAM", "PREDICTED_POINTS"])
@@ -47,28 +44,19 @@ def _read_predictions_all_days() -> pd.DataFrame:
             continue
         if df.empty:
             continue
-
-        # uniforma nomi
-        cols = {c.upper(): c for c in df.columns}  # mappa per robustezza
-        # rinomina safe alle maiuscole
+        # upper-case columns per robustezza
         df.columns = [c.upper() for c in df.columns]
-
-        # devono esserci queste 3 minime
         needed = {"GAME_DATE", "HOME_TEAM", "AWAY_TEAM", "PREDICTED_POINTS"}
-        if not needed.issubset(set(df.columns)):
-            # se manca qualcosa, salta
+        if not needed.issubset(df.columns):
             continue
 
-        # normalizza tipi
         tmp = df[["GAME_DATE", "HOME_TEAM", "AWAY_TEAM", "PREDICTED_POINTS"]].copy()
         tmp["DATE"] = pd.to_datetime(tmp["GAME_DATE"], errors="coerce").dt.date
         tmp.drop(columns=["GAME_DATE"], inplace=True)
-
         tmp["HOME_TEAM"] = tmp["HOME_TEAM"].astype(str).str.strip().str.upper()
         tmp["AWAY_TEAM"] = tmp["AWAY_TEAM"].astype(str).str.strip().str.upper()
         tmp["PREDICTED_POINTS"] = pd.to_numeric(tmp["PREDICTED_POINTS"], errors="coerce")
 
-        # filtra righe sensate
         tmp = tmp[tmp["DATE"].notna() & tmp["HOME_TEAM"].ne("") & tmp["AWAY_TEAM"].ne("") & tmp["PREDICTED_POINTS"].notna()]
         if not tmp.empty:
             dfs.append(tmp)
@@ -77,20 +65,17 @@ def _read_predictions_all_days() -> pd.DataFrame:
         return pd.DataFrame(columns=["DATE", "HOME_TEAM", "AWAY_TEAM", "PREDICTED_POINTS"])
 
     out = pd.concat(dfs, ignore_index=True)
-    # rimuovi duplicati (stessa partita predetta più volte): tieni l'ultima occorrenza
+    # tieni l'ultima predizione per stessa partita
     out = out.drop_duplicates(subset=["DATE", "HOME_TEAM", "AWAY_TEAM"], keep="last").reset_index(drop=True)
     return out
 
+
 def _read_regular_final_only() -> pd.DataFrame:
-    """
-    Legge dataset_regular_2025_26 e filtra solo partite finali con TOTAL_POINTS presenti.
-    Ritorna: DATE, HOME_TEAM, AWAY_TEAM, GAME_ID, TOTAL_POINTS, IS_FINAL
-    """
+    """Filtra solo partite finali con TOTAL_POINTS presenti."""
     if not DATASET_REGULAR.exists():
         return pd.DataFrame(columns=["DATE","HOME_TEAM","AWAY_TEAM","GAME_ID","TOTAL_POINTS","IS_FINAL"])
 
     df = pd.read_csv(DATASET_REGULAR)
-    # normalizza colonne
     for c in ["GAME_DATE","HOME_TEAM","AWAY_TEAM","GAME_ID","TOTAL_POINTS","IS_FINAL"]:
         if c not in df.columns:
             df[c] = np.nan
@@ -105,49 +90,43 @@ def _read_regular_final_only() -> pd.DataFrame:
     final_df = df[(df["IS_FINAL"]) & (df["TOTAL_POINTS"].notna())].copy()
     return final_df[["DATE","HOME_TEAM","AWAY_TEAM","GAME_ID","TOTAL_POINTS","IS_FINAL"]]
 
+
 def _load_existing() -> pd.DataFrame:
-    """
-    Carica il file OUT se esiste, usando separatore ';'.
-    """
+    """Carica l’OUT_FILE se esiste, ignorando le righe di sintesi (commentate con '#')."""
     if not OUT_FILE.exists():
         return pd.DataFrame(columns=OUT_COLS)
-    # il file può avere in coda la riga di sintesi: va ignorata
-    # quindi leggiamo solo le prime righe che matchano il numero di colonne
     try:
-        df = pd.read_csv(OUT_FILE, sep=";")
-        # Tieni solo le colonne corrette
+        df = pd.read_csv(OUT_FILE, sep=";", comment="#")
+        # tieni solo le colonne attese
         df = df[[c for c in OUT_COLS if c in df.columns]]
         # tipizza
-        df["DATE"] = pd.to_datetime(df["DATE"], errors="coerce").dt.date
-        df["PREDICTED_POINTS"] = pd.to_numeric(df["PREDICTED_POINTS"], errors="coerce")
-        df["TOTAL_POINTS"] = pd.to_numeric(df["TOTAL_POINTS"], errors="coerce")
-        df["DIFF"] = pd.to_numeric(df["DIFF"], errors="coerce")
-        df["GAME_ID"] = pd.to_numeric(df["GAME_ID"], errors="coerce")
-        # rimuovi righe totalmente vuote
+        if "DATE" in df.columns:
+            df["DATE"] = pd.to_datetime(df["DATE"], errors="coerce").dt.date
+        for c in ["PREDICTED_POINTS", "TOTAL_POINTS", "DIFF", "GAME_ID"]:
+            if c in df.columns:
+                df[c] = pd.to_numeric(df[c], errors="coerce")
         df = df.dropna(how="all")
         return df
     except Exception:
-        # se fallisce (file rotto), riparti pulito
         return pd.DataFrame(columns=OUT_COLS)
+
 
 def main():
     preds = _read_predictions_all_days()
     finals = _read_regular_final_only()
+
     if preds.empty or finals.empty:
-        # anche se vuoto, garantiamo esistenza file (senza riga di sintesi)
         existing = _load_existing()
         existing.to_csv(OUT_FILE, sep=";", index=False)
         print(f"ℹ️ Nessun dato aggiornabile. File scritto: {OUT_FILE}")
         return
 
-    # join su (DATE, HOME_TEAM, AWAY_TEAM)
     merged = preds.merge(
         finals,
         on=["DATE","HOME_TEAM","AWAY_TEAM"],
         how="inner",
-        validate="m:1"  # più predizioni possono collassare su una gara finale (teniamo l’ultima)
+        validate="m:1",
     )
-
     if merged.empty:
         existing = _load_existing()
         existing.to_csv(OUT_FILE, sep=";", index=False)
@@ -159,36 +138,36 @@ def main():
 
     new_rows = merged[["DATE","GAME","PREDICTED_POINTS","TOTAL_POINTS","DIFF","GAME_ID"]].copy()
 
-    # carica l’esistente e deduplica per GAME_ID tenendo l'ultima new_row
     existing = _load_existing()
     all_rows = pd.concat([existing, new_rows], ignore_index=True)
 
-    # se esistono righe con GAME_ID NaN (non dovrebbero), rimuovile
+    # rimuovi GAME_ID NaN (non dovrebbero)
     all_rows = all_rows[all_rows["GAME_ID"].notna()].copy()
 
-    # tieni l'ultima occorrenza per GAME_ID
+    # tieni ultima occorrenza per GAME_ID e ordina
     all_rows = all_rows.sort_values(["DATE","GAME_ID"])
     all_rows = all_rows.drop_duplicates(subset=["GAME_ID"], keep="last")
-
-    # ordina finale
     all_rows = all_rows.sort_values(["DATE","GAME_ID"]).reset_index(drop=True)
 
-    # scrivi CSV con ';'
+    # scrivi la tabella pulita
     all_rows.to_csv(OUT_FILE, sep=";", index=False)
 
-    # calcolo sintesi e append dopo 2 righe vuote
-    valid = all_rows.dropna(subset=["PREDICTED_POINTS","TOTAL_POINTS"])
+    # --- Sintesi (righe commentate con '# ' così sono ignorate alla prossima lettura)
+    valid = all_rows.dropna(subset=["PREDICTED_POINTS", "TOTAL_POINTS"])
     N = len(valid)
-    hit = int((valid["DIFF"].abs() < 12.0).sum())
-    perc = (hit / N * 100.0) if N > 0 else 0.0
-    summary_line = f"Partite con |diff| < 12 pt: {hit} / {N} ({perc:.1f}%)"
+    thresholds = [5, 12, 13, 14, 15]
+
+    lines = ["", ""]
+    for t in thresholds:
+        hit = int((valid["DIFF"].abs() < t).sum())
+        perc = (hit / N * 100.0) if N > 0 else 0.0
+        lines.append(f"# Partite con |diff| < {t} pt: {hit} / {N} ({perc:.1f}%)")
 
     with open(OUT_FILE, "a", encoding="utf-8") as f:
-        f.write("\n\n" + summary_line + "\n")
+        f.write("\n".join(lines) + "\n")
 
-    print(f"✅ Statistiche aggiornate: {OUT_FILE}")
-    print(f"   Righe totali: {len(all_rows)} | Nuove righe aggiunte: {len(new_rows)}")
-    print(f"   {summary_line}")
+    print(f"✅ Aggiornato {OUT_FILE} con {len(new_rows)} nuove righe e sintesi.")
+
 
 if __name__ == "__main__":
     main()
