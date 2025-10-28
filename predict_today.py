@@ -1,6 +1,6 @@
 # predict_today.py
 from pathlib import Path
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 import argparse
 import pandas as pd
 import numpy as np
@@ -155,7 +155,7 @@ def main():
         out["BASE_LINE"] = np.nan
 
     # Timestamp run
-    out["RUN_TS"] = datetime.utcnow().isoformat()
+    out["RUN_TS"] = datetime.now(timezone.utc).isoformat()
 
     # Salva
     out.to_csv(out_file, index=False)
