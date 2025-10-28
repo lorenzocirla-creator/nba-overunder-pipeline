@@ -11,6 +11,7 @@ columns: DATE;GAME;PREDICTED_POINTS;TOTAL_POINTS;DIFF;GAME_ID
 - Alla fine del file aggiunge 2 righe vuote + righe di sintesi (prefissate con '# ' per
   essere ignorate alla prossima lettura):
   "Partite con |diff| < X pt: H / N (Y%)" per X in [5, 12, 13, 14, 15]
+  e infine "# MAE medio: Y"
 """
 
 from pathlib import Path
@@ -43,7 +44,6 @@ def _read_predictions_all_days() -> pd.DataFrame:
             continue
         if df.empty:
             continue
-        # upper-case columns per robustezza
         df.columns = [c.upper() for c in df.columns]
         needed = {"GAME_DATE", "HOME_TEAM", "AWAY_TEAM", "PREDICTED_POINTS"}
         if not needed.issubset(df.columns):
@@ -64,7 +64,6 @@ def _read_predictions_all_days() -> pd.DataFrame:
         return pd.DataFrame(columns=["DATE", "HOME_TEAM", "AWAY_TEAM", "PREDICTED_POINTS"])
 
     out = pd.concat(dfs, ignore_index=True)
-    # tieni l'ultima predizione per stessa partita
     out = out.drop_duplicates(subset=["DATE", "HOME_TEAM", "AWAY_TEAM"], keep="last").reset_index(drop=True)
     return out
 
@@ -109,21 +108,13 @@ def _load_existing() -> pd.DataFrame:
 
 
 def _strip_trailing_summary(path: Path):
-    """Rimuove dalla coda del file eventuali righe di sintesi (# Partite con |diff| ...)
-    e le righe vuote adiacenti, così da non duplicare la sintesi ad ogni run."""
+    """Rimuove dalla coda eventuali righe di sintesi (# Partite con |diff| ...)"""
     if not path.exists():
         return
     lines = path.read_text(encoding="utf-8").splitlines()
     i = len(lines) - 1
-    # risali togliendo righe vuote finali
-    while i >= 0 and lines[i].strip() == "":
+    while i >= 0 and (lines[i].strip() == "" or lines[i].lstrip().startswith("# ")):
         i -= 1
-    # risali togliendo blocco di sintesi commentato
-    while i >= 0 and lines[i].lstrip().startswith("# Partite con |diff|"):
-        i -= 1
-        # togli eventuali righe vuote tra tabella e sintesi
-        while i >= 0 and lines[i].strip() == "":
-            i -= 1
     new_text = "\n".join(lines[:i+1]).rstrip("\n") + "\n" if i >= 0 else ""
     path.write_text(new_text, encoding="utf-8")
 
@@ -161,10 +152,7 @@ def main():
     all_rows = all_rows.sort_values(["DATE","GAME_ID"])
     all_rows = all_rows.drop_duplicates(subset=["GAME_ID"], keep="last").reset_index(drop=True)
 
-    # scrivi la tabella aggiornata
     all_rows.to_csv(OUT_FILE, sep=";", index=False)
-
-    # rimuovi eventuale sintesi precedente
     _strip_trailing_summary(OUT_FILE)
 
     # --- Sintesi (righe commentate con '# ')
@@ -178,10 +166,15 @@ def main():
         perc = (hit / N * 100.0) if N > 0 else 0.0
         lines.append(f"# Partite con |diff| < {t} pt: {hit} / {N} ({perc:.1f}%)")
 
+    # 👉 aggiungi MAE
+    if N > 0:
+        mae = valid["DIFF"].abs().mean()
+        lines.append(f"# MAE medio: {mae:.2f} pt su {N} partite")
+
     with open(OUT_FILE, "a", encoding="utf-8") as f:
         f.write("\n".join(lines) + "\n")
 
-    print(f"✅ Aggiornato {OUT_FILE} con {len(new_rows)} nuove righe e sintesi.")
+    print(f"✅ Aggiornato {OUT_FILE} con {len(new_rows)} nuove righe e sintesi (MAE={mae:.2f}).")
 
 
 if __name__ == "__main__":
