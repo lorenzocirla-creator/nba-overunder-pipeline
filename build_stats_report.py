@@ -14,7 +14,6 @@ columns: DATE;GAME;PREDICTED_POINTS;TOTAL_POINTS;DIFF;GAME_ID
 """
 
 from pathlib import Path
-from datetime import datetime
 import pandas as pd
 import numpy as np
 import glob
@@ -97,9 +96,7 @@ def _load_existing() -> pd.DataFrame:
         return pd.DataFrame(columns=OUT_COLS)
     try:
         df = pd.read_csv(OUT_FILE, sep=";", comment="#")
-        # tieni solo le colonne attese
         df = df[[c for c in OUT_COLS if c in df.columns]]
-        # tipizza
         if "DATE" in df.columns:
             df["DATE"] = pd.to_datetime(df["DATE"], errors="coerce").dt.date
         for c in ["PREDICTED_POINTS", "TOTAL_POINTS", "DIFF", "GAME_ID"]:
@@ -109,6 +106,26 @@ def _load_existing() -> pd.DataFrame:
         return df
     except Exception:
         return pd.DataFrame(columns=OUT_COLS)
+
+
+def _strip_trailing_summary(path: Path):
+    """Rimuove dalla coda del file eventuali righe di sintesi (# Partite con |diff| ...)
+    e le righe vuote adiacenti, così da non duplicare la sintesi ad ogni run."""
+    if not path.exists():
+        return
+    lines = path.read_text(encoding="utf-8").splitlines()
+    i = len(lines) - 1
+    # risali togliendo righe vuote finali
+    while i >= 0 and lines[i].strip() == "":
+        i -= 1
+    # risali togliendo blocco di sintesi commentato
+    while i >= 0 and lines[i].lstrip().startswith("# Partite con |diff|"):
+        i -= 1
+        # togli eventuali righe vuote tra tabella e sintesi
+        while i >= 0 and lines[i].strip() == "":
+            i -= 1
+    new_text = "\n".join(lines[:i+1]).rstrip("\n") + "\n" if i >= 0 else ""
+    path.write_text(new_text, encoding="utf-8")
 
 
 def main():
@@ -140,19 +157,17 @@ def main():
 
     existing = _load_existing()
     all_rows = pd.concat([existing, new_rows], ignore_index=True)
-
-    # rimuovi GAME_ID NaN (non dovrebbero)
     all_rows = all_rows[all_rows["GAME_ID"].notna()].copy()
-
-    # tieni ultima occorrenza per GAME_ID e ordina
     all_rows = all_rows.sort_values(["DATE","GAME_ID"])
-    all_rows = all_rows.drop_duplicates(subset=["GAME_ID"], keep="last")
-    all_rows = all_rows.sort_values(["DATE","GAME_ID"]).reset_index(drop=True)
+    all_rows = all_rows.drop_duplicates(subset=["GAME_ID"], keep="last").reset_index(drop=True)
 
-    # scrivi la tabella pulita
+    # scrivi la tabella aggiornata
     all_rows.to_csv(OUT_FILE, sep=";", index=False)
 
-    # --- Sintesi (righe commentate con '# ' così sono ignorate alla prossima lettura)
+    # rimuovi eventuale sintesi precedente
+    _strip_trailing_summary(OUT_FILE)
+
+    # --- Sintesi (righe commentate con '# ')
     valid = all_rows.dropna(subset=["PREDICTED_POINTS", "TOTAL_POINTS"])
     N = len(valid)
     thresholds = [5, 12, 13, 14, 15]
