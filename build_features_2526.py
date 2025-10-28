@@ -17,6 +17,8 @@ import sys
 import subprocess
 from pathlib import Path
 import pandas as pd
+from config_season_2526 import FEATURE_FLAGS
+from features.add_rolling_pace import add_rolling_pace
 
 ROOT = Path(__file__).resolve().parent
 
@@ -99,6 +101,10 @@ def main():
 
     print("\n🎯 Build features 2025–26 COMPLETATO")
     print("File aggiornato:", DATASET)
+
+    # 5) Add PACE_LAST5 (sperimentale)
+    if FEATURE_FLAGS.get("USE_PACE_LAST5", False):
+        add_rolling_pace(DATASET)
 
 if __name__ == "__main__":
     main()
