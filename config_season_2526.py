@@ -7,9 +7,9 @@ import datetime as dt
 from pathlib import Path
 
 # === Stagione target ===
-TARGET_SEASON = "2025-26"
-SEASON_START = dt.date(2025, 10, 1)
-SEASON_END   = dt.date(2026, 7, 1)
+TARGET_SEASON = "2025-26" #2025-26
+SEASON_START = dt.date(2025, 10, 21) #2025, 10, 1
+SEASON_END   = dt.date(2026, 4, 15) # 2026, 7, 1
 
 # === Cartelle ===
 ROOT = Path(__file__).resolve().parent

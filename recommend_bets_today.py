@@ -1,104 +1,89 @@
 # recommend_bets_today.py
-import pandas as pd
-import numpy as np
 from pathlib import Path
 from datetime import date
-from config_season_2526 import DATA_DIR
+import pandas as pd
+import numpy as np
+import re
 
-TODAY = date.today()
-PRED_FILE = DATA_DIR / f"predictions_today_{TODAY.strftime('%Y%m%d')}.csv"
-OUT_FILE  = DATA_DIR / f"recommended_bets_today_{TODAY.strftime('%Y%m%d')}.csv"
+ROOT = Path(__file__).resolve().parent
+PRED_DIR = ROOT / "predictions"
+PRED_DIR.mkdir(parents=True, exist_ok=True)
 
-THRESH = 10.0  # differenza minima per piazzare un bet
-SPAN = 10.0    # +/- attorno alla final line
-STEP = 0.5     # granularità linee alternative
+EDGE_TH = 5.5  # punti
 
-def half_round(x: float) -> float:
-    # arrotonda al .0/.5 (come quote totals tipiche)
-    return np.round(x * 2) / 2.0
+def list_prediction_files():
+    return sorted(PRED_DIR.glob("predictions_today_*.csv"))
 
-def build_lines(base: float) -> np.ndarray:
-    lo = base - SPAN
-    hi = base + SPAN
-    n = int((hi - lo)/STEP) + 1
-    return np.round(np.linspace(lo, hi, n) * 2) / 2.0
+def ymd_from_name(p: Path) -> int:
+    m = re.search(r"(\d{8})", p.name)
+    return int(m.group(1)) if m else -1
 
-def decide(pred: float, base_line: float):
-    # Trova OVER/UNDER e linea consigliata edge (margine = THRESH)
-    # OVER se pred >= line + THRESH -> line <= pred - THRESH
-    # UNDER se pred <= line - THRESH -> line >= pred + THRESH
-    # Scegliamo contro-linea "di bordo" (più alta per OVER, più bassa per UNDER)
-    over_edge  = half_round(pred - THRESH)
-    under_edge = half_round(pred + THRESH)
-    if pred >= base_line + THRESH:
-        return "OVER", over_edge
-    if pred <= base_line - THRESH:
-        return "UNDER", under_edge
-    return "NO BET", np.nan
+def latest_nonempty_predictions_file() -> Path | None:
+    files = list_prediction_files()
+    if not files:
+        return None
+    # ordina per data nel nome (crescente) e scorri al contrario
+    files.sort(key=ymd_from_name)
+    for p in reversed(files):
+        try:
+            df = pd.read_csv(p)
+        except Exception:
+            continue
+        if df is None or df.empty:
+            continue
+        if "PREDICTED_POINTS" not in df.columns:
+            continue
+        # almeno una riga valida
+        if pd.to_numeric(df["PREDICTED_POINTS"], errors="coerce").notna().any():
+            return p
+    return None
+
+def save_empty(out_path: Path, reason: str):
+    cols = ["GAME_DATE","HOME_TEAM","AWAY_TEAM","PREDICTED_POINTS","USED_LINE","RECOMMENDATION","MARGIN"]
+    pd.DataFrame(columns=cols).to_csv(out_path, index=False)
+    print(f"ℹ️ Nessuna raccomandazione: {reason}")
+    print(f"✅ File creato (vuoto): {out_path}")
+
+def pick_line(df: pd.DataFrame) -> pd.Series:
+    # FINAL -> CLOSING -> CURRENT -> BASE
+    candidates = [c for c in ["FINAL_LINE","CLOSING_LINE","CURRENT_LINE","BASE_LINE"] if c in df.columns]
+    if not candidates:
+        return pd.Series(np.nan, index=df.index)
+    line = pd.Series(np.nan, index=df.index, dtype=float)
+    for c in candidates:
+        vals = pd.to_numeric(df[c], errors="coerce")
+        line = line.fillna(vals)
+    return line
 
 def main():
-    if not PRED_FILE.exists():
-        print(f"⚠️ File predizioni non trovato: {PRED_FILE}")
+    pred_file = latest_nonempty_predictions_file()
+    if pred_file is None:
+        out_today = PRED_DIR / f"recommended_bets_today_{date.today().strftime('%Y%m%d')}.csv"
+        save_empty(out_today, "nessun file di predizioni non vuoto disponibile.")
         return
 
-    df = pd.read_csv(PRED_FILE)
-    # Usa FINAL_LINE, fallback su CURRENT_LINE
-    line = df["FINAL_LINE"].copy()
-    if "CURRENT_LINE" in df.columns:
-        line = line.fillna(df["CURRENT_LINE"])
+    # output coerente con la data del file scelto
+    ymd = re.search(r"(\d{8})", pred_file.name).group(1)
+    out_file = PRED_DIR / f"recommended_bets_today_{ymd}.csv"
 
-    df["BASE_LINE"] = line
-    recs = []
+    df = pd.read_csv(pred_file)
+    line = pick_line(df)
+    if line.isna().all():
+        save_empty(out_file, "nessuna linea disponibile (FINAL/CLOSING/CURRENT/BASE).")
+        return
 
-    for _, r in df.iterrows():
-        base = r["BASE_LINE"]
-        pred = r["PREDICTED_POINTS"]
-        if pd.isna(base) or pd.isna(pred):
-            recs.append({
-                "GAME_DATE": r["GAME_DATE"],
-                "HOME_TEAM": r["HOME_TEAM"],
-                "AWAY_TEAM": r["AWAY_TEAM"],
-                "PREDICTED_POINTS": pred,
-                "BASE_LINE": base,
-                "RECOMMENDATION": "NO DATA",
-                "SUGGESTED_LINE": np.nan,
-                "MARGIN": np.nan
-            })
-            continue
+    pred = pd.to_numeric(df["PREDICTED_POINTS"], errors="coerce")
+    out = df[["GAME_DATE","HOME_TEAM","AWAY_TEAM","PREDICTED_POINTS"]].copy()
+    out["USED_LINE"] = line
 
-        side, edge_line = decide(pred, base)
-        if side == "NO BET":
-            recs.append({
-                "GAME_DATE": r["GAME_DATE"],
-                "HOME_TEAM": r["HOME_TEAM"],
-                "AWAY_TEAM": r["AWAY_TEAM"],
-                "PREDICTED_POINTS": pred,
-                "BASE_LINE": base,
-                "RECOMMENDATION": "NO BET",
-                "SUGGESTED_LINE": np.nan,
-                "MARGIN": np.nan
-            })
-        else:
-            # clamp edge_line entro ±SPAN rispetto a base
-            lo = base - SPAN
-            hi = base + SPAN
-            edge_line = min(max(edge_line, lo), hi)
-            # margine informativo (quanto superiamo la soglia sulla linea consigliata)
-            margin = abs(pred - edge_line)
-            recs.append({
-                "GAME_DATE": r["GAME_DATE"],
-                "HOME_TEAM": r["HOME_TEAM"],
-                "AWAY_TEAM": r["AWAY_TEAM"],
-                "PREDICTED_POINTS": pred,
-                "BASE_LINE": base,
-                "RECOMMENDATION": side,
-                "SUGGESTED_LINE": edge_line,
-                "MARGIN": margin
-            })
+    diff = pred - line
+    out["MARGIN"] = diff.abs()
+    out["RECOMMENDATION"] = np.where(diff >= EDGE_TH, "OVER",
+                              np.where(diff <= -EDGE_TH, "UNDER", "NO BET"))
 
-    out = pd.DataFrame(recs)
-    out.to_csv(OUT_FILE, index=False)
-    print(f"✅ Raccomandazioni salvate in {OUT_FILE}")
+    out = out.sort_values("MARGIN", ascending=False).reset_index(drop=True)
+    out.to_csv(out_file, index=False)
+    print(f"✅ Raccomandazioni salvate in {out_file} (sorgente: {pred_file.name})")
 
 if __name__ == "__main__":
     main()

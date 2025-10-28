@@ -1,60 +1,127 @@
 # predict_today.py
+from pathlib import Path
+from datetime import date, datetime
+import argparse
 import pandas as pd
 import numpy as np
-from pathlib import Path
-from datetime import date
+
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import StandardScaler
 from sklearn.impute import SimpleImputer
+from sklearn.preprocessing import StandardScaler
 from xgboost import XGBRegressor
 from catboost import CatBoostRegressor
 
-from config_season_2526 import DATA_DIR
+# ============
+# Path & setup
+# ============
+ROOT = Path(__file__).resolve().parent
+DATA_REG = ROOT / "dati" / "dataset_regular_2025_26.csv"
+PRED_DIR = ROOT / "predictions"
+PRED_DIR.mkdir(parents=True, exist_ok=True)
 
-TODAY = date.today()  # GAME_DATE è in ET a livello di "data", qui usiamo la data odierna
-DATA_PATH = DATA_DIR / "dataset_regular_2025_26.csv"
-OUT_DIR = DATA_DIR
-OUT_FILE = OUT_DIR / f"predictions_today_{TODAY.strftime('%Y%m%d')}.csv"
+# Ensemble pesi
+ENSEMBLE_WEIGHTS = {"XGB": 0.3, "CAT": 0.7}
+
+# Colonne non predittive
+DROP_COLS = {
+    "GAME_ID", "GAME_DATE", "HOME_TEAM", "AWAY_TEAM",
+    "PTS_HOME", "PTS_AWAY", "TOTAL_POINTS",  # target & componenti
+    "CLOSING_LINE", "FINAL_LINE", "CURRENT_LINE", "BASE_LINE"  # linee, le mergiamo dopo
+}
+
+def save_empty_csv(path: Path, reason: str):
+    path.write_text("GAME_DATE,HOME_TEAM,AWAY_TEAM,PREDICTED_POINTS,BASE_LINE\n")
+    print(f"ℹ️ {reason}")
+    print(f"✅ File creato (vuoto): {path}")
+
+def pick_line_cols_for_merge(df: pd.DataFrame) -> list[str]:
+    keep = ["GAME_DATE", "HOME_TEAM", "AWAY_TEAM"]
+    for c in ["FINAL_LINE", "CLOSING_LINE", "CURRENT_LINE", "BASE_LINE"]:
+        if c in df.columns:
+            keep.append(c)
+    return keep
+
+def normalize_teams(df: pd.DataFrame) -> pd.DataFrame:
+    for c in ["HOME_TEAM", "AWAY_TEAM"]:
+        if c in df.columns:
+            df[c] = df[c].astype(str).str.upper().str.strip()
+    return df
 
 def main():
-    df = pd.read_csv(DATA_PATH, parse_dates=["GAME_DATE"])
-    # y storico (solo partite giocate)
-    hist_mask = df["TOTAL_POINTS"].notna()
-    fut_mask = (df["TOTAL_POINTS"].isna()) & (df["GAME_DATE"].dt.date == TODAY)
+    # Argomento opzionale --date
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--date", type=str, help="YYYY-MM-DD (default: oggi)")
+    args = ap.parse_args()
 
-    if fut_mask.sum() == 0:
-        print("ℹ️ Nessuna partita di oggi trovata (o già con punteggio). Esco.")
+    if args.date:
+        try:
+            target_date = datetime.strptime(args.date, "%Y-%m-%d").date()
+        except ValueError:
+            print("❌ Formato data non valido. Usa YYYY-MM-DD.")
+            return
+    else:
+        target_date = date.today()
+
+    out_file = PRED_DIR / f"predictions_today_{target_date.strftime('%Y%m%d')}.csv"
+
+    # Carica dataset regular
+    if not DATA_REG.exists():
+        save_empty_csv(out_file, "dataset regular mancante.")
         return
 
-    y = df.loc[hist_mask, "TOTAL_POINTS"]
+    reg = pd.read_csv(DATA_REG)
+    if reg.empty:
+        save_empty_csv(out_file, "dataset regular vuoto.")
+        return
 
-    drop_cols = [
-        "GAME_ID","GAME_DATE","HOME_TEAM","AWAY_TEAM",
-        "PTS_HOME","PTS_AWAY","TOTAL_POINTS","CLOSING_LINE"
-    ]
-    feature_cols = [c for c in df.columns if c not in drop_cols]
+    # Tipi e normalizzazioni
+    reg["GAME_DATE"] = pd.to_datetime(reg["GAME_DATE"], errors="coerce").dt.date
+    reg = normalize_teams(reg)
 
-    X_train = df.loc[hist_mask, feature_cols]
-    X_pred  = df.loc[fut_mask, feature_cols]
+    # Train = partite concluse (TOTAL_POINTS non NaN)
+    train = reg[reg["TOTAL_POINTS"].notna()].copy()
+    # Test = partite del giorno da predire
+    test = reg[(reg["GAME_DATE"] == target_date) & (reg["TOTAL_POINTS"].isna())].copy()
+
+    if test.empty:
+        save_empty_csv(out_file, f"Nessuna partita esattamente in data {target_date}. Passate={len(reg[reg['GAME_DATE']<target_date])}, Future={len(reg[reg['GAME_DATE']>target_date])}.")
+        return
+
+    # Se poche partite concluse, meglio non allenare
+    if len(train) < 20:
+        save_empty_csv(out_file, f"Poche label disponibili per il training ({len(train)} < 20).")
+        return
+
+    # Costruisci feature set
+    feature_cols = [c for c in reg.columns if c not in DROP_COLS]
+    # Tieni solo colonne numeriche nelle feature
+    num_cols = [c for c in feature_cols if pd.api.types.is_numeric_dtype(train[c]) or c in ["REST_DIFF"]]
+    # Se qualche colonna è object ma numerica, prova coerce
+    for c in feature_cols:
+        if c not in num_cols:
+            # prova a forzare numerico su una copia
+            try_series = pd.to_numeric(train[c], errors="coerce")
+            if try_series.notna().any():
+                num_cols.append(c)
+
+    X_train = train[num_cols].apply(pd.to_numeric, errors="coerce")
+    y_train = pd.to_numeric(train["TOTAL_POINTS"], errors="coerce")
+    X_test  = test[num_cols].apply(pd.to_numeric, errors="coerce")
 
     # Preprocess
     preproc = Pipeline([
         ("imputer", SimpleImputer(strategy="mean")),
         ("scaler", StandardScaler())
     ])
-    X_train_p = preproc.fit_transform(X_train)
-    X_pred_p  = preproc.transform(X_pred)
 
-    # Due modelli + ensemble semplice come nel main dei test
+    X_train_p = preproc.fit_transform(X_train)
+    X_test_p  = preproc.transform(X_test)
+
+    # Modelli
     xgb = XGBRegressor(
-        n_estimators=400,
-        max_depth=3,
-        learning_rate=0.01,
-        subsample=0.8,
-        colsample_bytree=0.8,
-        objective="reg:squarederror",
-        random_state=42,
-        n_jobs=-1
+        n_estimators=400, max_depth=3, learning_rate=0.01,
+        subsample=0.8, colsample_bytree=0.8,
+        objective="reg:squarederror", random_state=42, n_jobs=-1
     )
     cat = CatBoostRegressor(
         iterations=1000, depth=6, learning_rate=0.01,
@@ -62,21 +129,37 @@ def main():
         loss_function="RMSE", random_seed=42, verbose=0
     )
 
-    xgb.fit(X_train_p, y)
-    cat.fit(X_train_p, y)
+    # Fit + predict
+    xgb.fit(X_train_p, y_train)
+    cat.fit(X_train_p, y_train)
 
-    y_pred_xgb = xgb.predict(X_pred_p)
-    y_pred_cat = cat.predict(X_pred_p)
+    pred_xgb = xgb.predict(X_test_p)
+    pred_cat = cat.predict(X_test_p)
+    pred = ENSEMBLE_WEIGHTS["XGB"] * pred_xgb + ENSEMBLE_WEIGHTS["CAT"] * pred_cat
 
-    y_pred = 0.3 * y_pred_xgb + 0.7 * y_pred_cat
+    # Output base
+    out = test[["GAME_DATE", "HOME_TEAM", "AWAY_TEAM"]].copy()
+    out["PREDICTED_POINTS"] = pred
 
-    out = df.loc[fut_mask, ["GAME_DATE","HOME_TEAM","AWAY_TEAM","FINAL_LINE","CURRENT_LINE"]].copy()
-    out["PREDICTED_POINTS"] = y_pred
-    out["RUN_TS"] = pd.Timestamp.utcnow().isoformat()
+    # --- 🔧 Merge linee dal dataset regular (stessa data) ---
+    keep_cols = pick_line_cols_for_merge(reg)
+    reg_day = reg.loc[reg["GAME_DATE"] == target_date, keep_cols].copy()
+    reg_day = normalize_teams(reg_day)
 
-    OUT_DIR.mkdir(parents=True, exist_ok=True)
-    out.to_csv(OUT_FILE, index=False)
-    print(f"✅ Salvate predizioni del giorno in {OUT_FILE} ({len(out)} partite)")
+    out = normalize_teams(out).merge(
+        reg_day, on=["GAME_DATE", "HOME_TEAM", "AWAY_TEAM"], how="left"
+    )
+
+    # Colonna BASE_LINE: se non esiste, creala vuota (usata da recommend come fallback)
+    if "BASE_LINE" not in out.columns:
+        out["BASE_LINE"] = np.nan
+
+    # Timestamp run
+    out["RUN_TS"] = datetime.utcnow().isoformat()
+
+    # Salva
+    out.to_csv(out_file, index=False)
+    print(f"✅ Salvate predizioni in {out_file} (data scelta: {target_date}, righe: {len(out)})")
 
 if __name__ == "__main__":
     main()

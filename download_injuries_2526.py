@@ -48,7 +48,7 @@ def main():
             start_date = SEASON_START
             all_reports = []
         else:
-            old["report_date"] = pd.to_datetime(old["report_date"])
+            old["report_date"] = pd.to_datetime(old["report_date"], format="mixed", errors="coerce")
             last_date = max(old["report_date"]).date()
             print(f"ℹ️ Injury file trovato, ultimo aggiornamento: {last_date}")
             start_date = last_date + timedelta(days=1)

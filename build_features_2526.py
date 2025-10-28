@@ -7,7 +7,7 @@ Esegue in sequenza:
 - add_backtoback, add_roadtrip, add_forma, add_context_features,
   add_rest_days, add_h2h, add_fatigue
 - (opzionale) injuries: download_injuries + build_player_stats + add_injuries
-- (opzionale) add_closing_line (quando definita la sorgente quote)
+- (opzionale) add_closing_line
 
 Esecuzione:
     python build_features_2526.py
@@ -16,14 +16,29 @@ Esecuzione:
 import sys
 import subprocess
 from pathlib import Path
+import pandas as pd
 
 ROOT = Path(__file__).resolve().parent
+
+# -- Directory dati: preferisci "dati/", ma se non esiste usa "dati_2025_2026/"
+DATA_DIR_CANDIDATES = [ROOT / "dati", ROOT / "dati_2025_2026"]
+for _p in DATA_DIR_CANDIDATES:
+    if _p.exists():
+        DATA_DIR = _p
+        break
+else:
+    # se nessuna esiste, crea "dati/"
+    DATA_DIR = ROOT / "dati"
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+
+DATASET = DATA_DIR / "dataset_regular_2025_26.csv"
+TEAM_STATS_PATH = DATA_DIR / "team_stats_2025_26.csv"
+
 FEATURES = ROOT / "features"
-DATASET = ROOT / "dati_2025_2026" / "dataset_regular_2025_26.csv"
 
 # ---- Toggle step opzionali ----
-RUN_INJURIES = True       # metti False se vuoi saltare injuries
-RUN_CLOSING  = True      # metti True quando add_closing_line.py è pronto e hai le odds
+RUN_INJURIES = True       # False per saltare injuries
+RUN_CLOSING  = True       # True se vuoi aggiungere le quote (script pronto)
 
 def run(label, cmd_list):
     print(f"\n▶️  {label}")
@@ -33,6 +48,14 @@ def run(label, cmd_list):
         sys.exit(rc)
     print(f"✅ {label} completato")
 
+def _file_has_rows(path: Path) -> bool:
+    if not path.exists():
+        return False
+    try:
+        return len(pd.read_csv(path)) > 0
+    except Exception:
+        return False
+
 def main():
     # 0) Base dataset
     if not DATASET.exists():
@@ -41,8 +64,15 @@ def main():
         print("ℹ️ Dataset base esiste già:", DATASET)
 
     # 1) Team stats (PACE/OFF/DEF/NET/TS/EFG)
-    run("Build team stats", [str(FEATURES / "build_team_stats_2526.py")])
-    run("Add team stats",   [str(FEATURES / "add_team_stats.py")])
+    if _file_has_rows(TEAM_STATS_PATH):
+        print(f"✅ File team_stats già presente ({TEAM_STATS_PATH}), uso dati esistenti.")
+    else:
+        print(f"⚙️ Rigenero team_stats perché mancante o vuoto → {TEAM_STATS_PATH}")
+        # usa lo script collaudato che hai lanciato manualmente
+        run("Fetch team stats (LeagueDashTeamStats)", [str(ROOT / "data_teamstats_2526.py")])
+
+    # ora effettua il merge delle team stats sul dataset
+    run("Add team stats", [str(FEATURES / "add_team_stats.py")])
 
     # 2) Calendario e forma
     run("Add back-to-back",   [str(FEATURES / "add_backtoback.py")])
@@ -61,7 +91,7 @@ def main():
     else:
         print("⏭️  Injuries DISABILITATO (RUN_INJURIES=False)")
 
-    # 4) Closing line (quando definita la sorgente odds)
+    # 4) Closing line (opzionale)
     if RUN_CLOSING:
         run("Add closing line", [str(FEATURES / "add_closing_line.py")])
     else:

@@ -27,7 +27,7 @@ def add_injuries(dataset_path=None, output_path=None):
         output_path = DATA_DIR / "dataset_injuries.csv"
 
     games = pd.read_csv(dataset_path)
-    games["GAME_DATE"] = pd.to_datetime(games["GAME_DATE"])
+    games["GAME_DATE"] = pd.to_datetime(games["GAME_DATE"], errors="coerce")
 
     # Aggiungo sempre le colonne, anche se non ci sono dati
     for col in ["KEY_PLAYERS_OUT_HOME", "KEY_PLAYERS_OUT_AWAY", "IMPACT_HOME", "IMPACT_AWAY"]:
@@ -49,7 +49,10 @@ def add_injuries(dataset_path=None, output_path=None):
         games.to_csv(dataset_path, index=False)
         return games
 
-    injuries["report_date"] = pd.to_datetime(injuries["report_date"])
+    # 🔹 FIX: normalizzazione robusta della colonna report_date
+    injuries["report_date"] = pd.to_datetime(
+        injuries["report_date"], errors="coerce"
+    ).dt.tz_localize(None).dt.date
 
     # Carica player stats (top scorer)
     player_stats_path = DATA_DIR / "player_stats_2025_26.csv"
@@ -67,14 +70,16 @@ def add_injuries(dataset_path=None, output_path=None):
     )
 
     def compute_injury_impact(date, team):
-        # Prova a usare il giorno stesso
+        # Confronta solo su base date pura (no timezone)
+        date_only = date.date() if hasattr(date, "date") else date
+
         day_injuries = injuries[
-            (injuries["report_date"] == date) & (injuries["Team"] == team)
+            (injuries["report_date"] == date_only) & (injuries["Team"] == team)
         ]
 
         # Se non c’è nulla → fallback giorno precedente
         if day_injuries.empty:
-            prev_day = date - timedelta(days=1)
+            prev_day = date_only - timedelta(days=1)
             day_injuries = injuries[
                 (injuries["report_date"] == prev_day) & (injuries["Team"] == team)
             ]
@@ -85,7 +90,7 @@ def add_injuries(dataset_path=None, output_path=None):
         for _, player in team_top.iterrows():
             row = day_injuries[day_injuries["Player Name"] == player["PLAYER"]]
             if not row.empty:
-                status = row.iloc[0]["Current Status"]
+                status = str(row.iloc[0].get("Current Status", "")).strip()
                 weight = STATUS_WEIGHTS.get(status, 0.0)
                 key_out += weight
                 impact += player["PPG"] * weight
