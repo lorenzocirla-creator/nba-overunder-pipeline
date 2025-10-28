@@ -40,3 +40,9 @@ if __name__ == "__main__":
     print("Stagione target:", TARGET_SEASON)
     print("Inizio:", SEASON_START, "Fine:", SEASON_END)
     print("Dataset regular path:", path_dataset_regular())
+
+# --- Feature toggles per esperimenti modello ---
+FEATURE_FLAGS = {
+    "USE_CLOSING_GAP": False,   # differenza tra predicted e closing line come feature
+    "USE_PACE_LAST5":  True,   # pace medio ultimi 5 match
+}
