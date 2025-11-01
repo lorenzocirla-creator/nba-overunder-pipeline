@@ -1,20 +1,32 @@
-# --- Sistema / Python ---
-.DS_Store
+# === Python ===
 __pycache__/
-*.pyc
+*.py[cod]
 *.pyo
 *.pyd
+
+# === Environment ===
+.env
+.venv/
+venv/
+env/
+
+# === Logs ===
+logs/
 *.log
 
-# --- Modelli e training ---
+# === Machine learning / output ===
 catboost_info/
-outputs/
-predictions/
+*.tfevents
 
-# --- Dataset dinamici (non versionare dati quotidiani) ---
+# === Dati dinamici ===
 dati/*.csv
-!dati/README.md
+!dati/manual_totals_2025_26.csv
+dati/raw/
 
-# --- IDE e cache ---
-.vscode/
-.idea/
+# === System files ===
+.DS_Store
+
+# === Cache e output temporanei ===
+*.tmp
+*.bak
+*.swp
