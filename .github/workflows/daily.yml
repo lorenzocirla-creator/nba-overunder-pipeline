@@ -24,15 +24,26 @@ jobs:
 
       - name: Run daily pipeline
         run: |
-          python daily_run.py
+          python3 daily_run.py
 
+      # 🔁 Commit automatico dei risultati generati
       - name: Commit results
+        if: ${{ success() }}
         run: |
-          git config user.name "github-actions"
-          git config user.email "actions@github.com"
-          git add outputs/ || true
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add dati/*.csv stats_predictions_vs_results.csv outputs/ predictions/ || true
           git commit -m "📈 Daily NBA update $(date +'%Y-%m-%d')" || true
           git push || true
 
-
-
+      # 💾 Upload come artifacts scaricabili
+      - name: Upload output artifacts
+        if: ${{ success() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: nba_daily_outputs
+          path: |
+            dati/*.csv
+            stats_predictions_vs_results.csv
+            outputs/
+            predictions/
