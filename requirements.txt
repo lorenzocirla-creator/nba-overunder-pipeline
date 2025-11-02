@@ -1,18 +1,24 @@
 # Core scientific
 numpy==1.26.4
-pandas==2.2.2
-scikit-learn==1.5.2
+pandas==2.2.3
 scipy==1.11.4
+scikit-learn==1.5.2
+threadpoolctl==3.6.0
+joblib==1.4.2
+python-dateutil==2.9.0.post0
+pytz==2024.2
+tzdata>=2022.7
 
 # Models
-catboost==1.2.5
 xgboost==2.0.3
+catboost==1.2.5
+graphviz==0.21
 
 # IO / Utils
 requests==2.32.3
 nba_api==1.10.2
 nbainjuries==1.0.0
 tqdm==4.66.5
-joblib==1.4.2
-python-dateutil==2.9.0.post0
-pytz==2024.2
+aiohttp==3.13.2
+jpype1==1.5.2
+PyPDF2==3.0.1
