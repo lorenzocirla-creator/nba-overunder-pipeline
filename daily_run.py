@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """
 Pipeline giornaliera NBA 2025–26
 Usage:
@@ -15,6 +16,8 @@ Steps:
 6) main_nba.py                  (solo se abbastanza partite concluse, salvo --no-train)
 7) predict_today.py             (best-effort)
 8) recommend_bets_today.py      (best-effort)
+9) update_master_and_append.py  (aggiorna REAL_TOTAL e accoda le predizioni odierne)
+10) build_mae_history_real.py   (scrive predictions/mae_history_real.csv)
 """
 
 import sys
@@ -107,25 +110,25 @@ def main():
 
     log_print("\n🏀 Avvio pipeline giornaliera NBA 2025–26")
 
-    # 1️ Aggiornamento partite
+    # 1) Aggiornamento partite
     updater_args = [str(ROOT / "data_updater_2526.py")]
     if args.full:
         updater_args.append("--full")
     run("Aggiornamento partite", updater_args)
 
-    # 2️ Ricostruzione dataset base
+    # 2) Ricostruzione dataset base
     run("Rebuild dataset base", [str(ROOT / "build_dataset_regular_2025_26.py")])
 
-    # 3️ Re-applica risultati manuali (se presente)
+    # 3) Re-applica risultati manuali (se presente)
     optional("Manual results patch", "manual_results_patch.py")
 
-    # 4️ Controllo partite passate senza risultato (se presente)
+    # 4) Controllo partite passate senza risultato (se presente)
     optional("Check missing results", "check_missing_results.py")
 
-    # 5️ Costruzione feature set completo
+    # 5) Costruzione feature set completo
     run("Build feature set", [str(ROOT / "build_features_2526.py")])
 
-    # 6️ Training condizionale
+    # 6) Training condizionale
     if args.no_train:
         log_print("⏭️  Flag --no-train attivo: salto training.")
     else:
@@ -134,18 +137,21 @@ def main():
         else:
             log_print("⏭️  Poche partite concluse: salto il training per evitare label NaN.")
 
-    # 7️ Predizioni del giorno
+    # 7) Predizioni del giorno (best-effort)
     log_print("\n▶️ Predizioni giornata")
     subprocess.run([sys.executable, str(ROOT / "predict_today.py")], check=False)
     log_print("✅ Predizioni completate")
 
-    # 8 Raccomandazioni scommesse
+    # 8) Raccomandazioni scommesse (best-effort)
     log_print("\n▶️ Raccomandazioni scommesse")
     subprocess.run([sys.executable, str(ROOT / "recommend_bets_today.py")], check=False)
     log_print("✅ Raccomandazioni completate")
-    
-    # 9 Aggiorna storico statistiche (backfill ultimi 4 giorni)
-    run("Aggiorna statistiche predizioni vs risultati", ["build_stats_report.py"])
+
+    # 9) Aggiorna master: REAL_TOTAL + append predizioni odierne
+    optional("Update master (REAL_TOTAL + append today)", "update_master_and_append.py")
+
+    # 10) Ricostruisci MAE history reale (scrive predictions/mae_history_real.csv)
+    optional("Build MAE history (real)", "build_mae_history_real.py")
 
     log_print("\n🎯 DAILY RUN COMPLETATA")
 
