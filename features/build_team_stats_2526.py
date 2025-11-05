@@ -1,73 +1,59 @@
 # features/build_team_stats_2526.py
-"""
-Costruisce le statistiche di squadra (PACE, OFF/DEF/NET Rating, TS%, eFG%) 
-per la stagione 2025–26 a partire dai raw di nba_api.
-Output: team_stats_2025_26.csv
-"""
+# Genera team_stats_2025_26.csv con le advanced team stats (PACE, OFF/DEF/NET, TS%, eFG%)
 
-import sys
-import pandas as pd
+import time
 from pathlib import Path
+import pandas as pd
 
-# Aggiungo la cartella padre (2025_2026) a sys.path
-sys.path.append(str(Path(__file__).resolve().parent.parent))
+from nba_api.stats.endpoints import leaguedashteamstats
 
-from config_season_2526 import RAW_DIR, DATA_DIR
+OUT_PATH = Path(__file__).resolve().parent.parent / "team_stats_2025_26.csv"
 
+def fetch_team_advanced_stats(season="2025-26", season_type="Regular Season", retries=3, sleep_s=2):
+    last_err = None
+    for attempt in range(1, retries + 1):
+        try:
+            print(f"[fetch] tentativo {attempt}/{retries} — season={season}, season_type={season_type}")
+            res = leaguedashteamstats.LeagueDashTeamStats(
+                season=season,
+                season_type_all_star=season_type,
+                measure_type_detailed_defense="Advanced",  # Advanced metrics
+                per_mode_detailed="PerGame",               # <- FIX: stringa valida ("PerGame"/"Per48"/"Totals")
+                pace_adjust="N",
+                plus_minus="N",
+                rank="N",
+                date_from_nullable=None,
+                date_to_nullable=None,
+            )
+            df = res.get_data_frames()[0]
+            if df.empty:
+                raise ValueError("DataFrame vuoto dalla API")
 
-OUT = DATA_DIR / "team_stats_2025_26.csv"
+            # Sanity checks
+            n_teams = df["TEAM_ID"].nunique() if "TEAM_ID" in df.columns else 0
+            if n_teams < 25:
+                raise ValueError(f"Team distinti inattesi: {n_teams} (attesi ~30)")
 
-def build():
-    # Carica i raw: scoreboard line_score dovrebbe contenere punti, FGA, FTA ecc.
-    files = list(RAW_DIR.glob("*_linescore.csv"))
-    if not files:
-        # Patch: nessun file → crea CSV vuoto
-        cols = ["TEAM", "PACE", "OFFRTG", "DEFRTG", "NETRTG", "TS", "EFG"]
-        pd.DataFrame(columns=cols).to_csv(OUT, index=False)
-        print(f"⚠️ Nessun raw disponibile. Creato team_stats vuoto in {OUT}")
-        return OUT
+            # Selezione colonne chiave (aggiungi qui se te ne servono altre)
+            keep = ["TEAM_ID","TEAM_NAME","GP","PACE","OFF_RATING","DEF_RATING","NET_RATING","TS_PCT","EFG_PCT"]
+            df = df[[c for c in keep if c in df.columns]].copy()
 
-    # Concatena tutti i raw disponibili
-    dfs = [pd.read_csv(f) for f in files if f.stat().st_size > 0]
-    if not dfs:
-        cols = ["TEAM", "PACE", "OFFRTG", "DEFRTG", "NETRTG", "TS", "EFG"]
-        pd.DataFrame(columns=cols).to_csv(OUT, index=False)
-        print(f"⚠️ Raw vuoti. Creato team_stats vuoto in {OUT}")
-        return OUT
+            # Ordina per stabilità
+            df = df.sort_values("TEAM_NAME").reset_index(drop=True)
+            return df
 
-    ls = pd.concat(dfs, ignore_index=True)
+        except Exception as e:
+            last_err = e
+            print(f"[fetch] errore: {e}")
+            time.sleep(sleep_s)
 
-    # Normalizza colonne richieste (se mancano → patch vuoto)
-    required = ["TEAM_ID", "TEAM_ABBREVIATION", "PTS", "FGA", "FGM", "FTA", "FTM"]
-    missing = [c for c in required if c not in ls.columns]
-    if missing:
-        cols = ["TEAM", "PACE", "OFFRTG", "DEFRTG", "NETRTG", "TS", "EFG"]
-        pd.DataFrame(columns=cols).to_csv(OUT, index=False)
-        print(f"⚠️ Colonne mancanti {missing}. Creato team_stats vuoto in {OUT}")
-        return OUT
+    raise RuntimeError(f"Impossibile scaricare le team stats ({season}, {season_type}). Ultimo errore: {last_err}")
 
-    # Aggrega per squadra
-    grouped = ls.groupby("TEAM_ABBREVIATION").agg({
-        "PTS": "sum",
-        "FGA": "sum",
-        "FGM": "sum",
-        "FTA": "sum",
-        "FTM": "sum"
-    }).reset_index().rename(columns={"TEAM_ABBREVIATION": "TEAM"})
-
-    # Placeholder calcoli (semplificati per test, puoi raffinare quando ci saranno dati veri)
-    grouped["PACE"] = 0.0
-    grouped["OFFRTG"] = 0.0
-    grouped["DEFRTG"] = 0.0
-    grouped["NETRTG"] = 0.0
-    grouped["TS"] = (grouped["PTS"] / (2 * (grouped["FGA"] + 0.44 * grouped["FTA"]))).fillna(0)
-    grouped["EFG"] = ((grouped["FGM"] + 0.5 * 0) / grouped["FGA"]).fillna(0)  # 3PM non disponibile qui
-
-    # Salva su disco
-    grouped.to_csv(OUT, index=False)
-    print(f"✅ Team stats create in {OUT} ({len(grouped)} squadre).")
-    return OUT
-
+def main():
+    df = fetch_team_advanced_stats()
+    OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
+    df.to_csv(OUT_PATH, index=False)
+    print(f"✅ Salvato {OUT_PATH} con {len(df)} righe e {df['TEAM_ID'].nunique()} team")
 
 if __name__ == "__main__":
-    build()
+    main()
