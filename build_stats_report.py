@@ -1,7 +1,7 @@
 # build_stats_report.py
 """
 Crea/aggiorna un unico file di statistiche con separatore ';':
-columns: DATE;GAME;PREDICTED_POINTS;TOTAL_POINTS;DIFF;GAME_ID
+# columns: DATE;GAME;PREDICTED_POINTS;TOTAL_POINTS;DIFF;GAME_ID
 
 - Legge tutte le predizioni disponibili (predictions/predictions_today_*.csv)
 - Joina con dati finali (dati/dataset_regular_2025_26.csv) su (DATE, HOME_TEAM, AWAY_TEAM)

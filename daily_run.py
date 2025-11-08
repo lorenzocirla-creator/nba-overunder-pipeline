@@ -125,10 +125,13 @@ def main():
     # 4) Controllo partite passate senza risultato (se presente)
     optional("Check missing results", "check_missing_results.py")
 
-    # 5) Costruzione feature set completo
+    # 5) Costruzione team stats
+    run("Build feature set", [str(ROOT / "data_teamstats_2526.py")])
+
+    # 6) Costruzione feature set completo
     run("Build feature set", [str(ROOT / "build_features_2526.py")])
 
-    # 6) Training condizionale
+    # 7) Training condizionale
     if args.no_train:
         log_print("⏭️  Flag --no-train attivo: salto training.")
     else:
@@ -137,21 +140,21 @@ def main():
         else:
             log_print("⏭️  Poche partite concluse: salto il training per evitare label NaN.")
 
-    # 7) Predizioni del giorno (best-effort)
+    # 8) Predizioni del giorno (best-effort)
     log_print("\n▶️ Predizioni giornata")
     subprocess.run([sys.executable, str(ROOT / "predict_today.py")], check=False)
     log_print("✅ Predizioni completate")
 
-    # 8) Raccomandazioni scommesse (best-effort)
+    # 9) Raccomandazioni scommesse (best-effort)
     log_print("\n▶️ Raccomandazioni scommesse")
     subprocess.run([sys.executable, str(ROOT / "recommend_bets_today.py")], check=False)
     log_print("✅ Raccomandazioni completate")
 
-    # 9) Aggiorna master: REAL_TOTAL + append predizioni odierne
+    # 10) Aggiorna master: REAL_TOTAL + append predizioni odierne
     optional("Update master (REAL_TOTAL + append today)", "update_master_and_append.py")
 
-    # 10) Ricostruisci MAE history reale (scrive predictions/mae_history_real.csv)
-    optional("Build MAE history (real)", "build_mae_history_real.py")
+    # 11) Ricostruisci MAE history reale (scrive predictions/mae_history_real.csv)
+    optional("Build MAE history (real)", "build_mae_history.py")
 
     log_print("\n🎯 DAILY RUN COMPLETATA")
 

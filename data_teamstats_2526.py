@@ -1,15 +1,16 @@
-# data_teamstats_2526.py
+# features/data_teamstats_2526.py
 """
-Team stats cumulative NBA 2025-26, giorno per giorno.
+Team stats cumulative NBA 2025-26, giorno per giorno (incrementale).
 Prende:
-- Advanced  -> PACE, OFF_RATING, DEF_RATING, NET_RATING
-- Four Factors -> TS_PCT, EFG_PCT
+- Advanced       -> PACE, OFF_RATING, DEF_RATING, NET_RATING
+- Four Factors   -> TS_PCT, EFG_PCT
 e fa merge su TEAM_ID.
 
 Output: dati/team_stats_2025_26.csv con colonne:
 TEAM, TEAM_ID, TEAM_ABBREVIATION, PACE, OFFRTG, DEFRTG, NETRTG, TS, EFG, DATE
 """
 
+import argparse
 import datetime as dt
 import time
 from pathlib import Path
@@ -19,14 +20,15 @@ from requests.exceptions import ReadTimeout, ConnectionError
 from nba_api.stats.endpoints import leaguedashteamstats
 
 ROOT = Path(__file__).resolve().parent
-OUT = ROOT / "dati" / "team_stats_2025_26.csv"
+OUT = ROOT.parent / "dati" / "team_stats_2025_26.csv"  # ../dati/...
+OUT.parent.mkdir(parents=True, exist_ok=True)
 
 SEASON = "2025-26"
-SEASON_START = dt.date(2025, 10, 6)
+SEASON_START = dt.date(2025, 10, 21)  # Regular tipoff (aggiusta se necessario)
 TIMEOUT = 60
 RETRIES = 3
 
-# Mappa fallback TEAM_ID -> ABBR, se mai mancasse TEAM_ABBREVIATION
+# Mappa fallback TEAM_ID -> ABBR
 TEAM_ID_TO_ABBR = {
     1610612737:"ATL",1610612738:"BOS",1610612739:"CLE",1610612740:"NOP",
     1610612741:"CHI",1610612742:"DAL",1610612743:"DEN",1610612744:"GSW",
@@ -38,40 +40,47 @@ TEAM_ID_TO_ABBR = {
     1610612765:"DET",1610612766:"CHA"
 }
 
-def _fetch(measure: str, dstr: str) -> pd.DataFrame:
+def _fetch(measure: str, date_from: str, date_to: str) -> pd.DataFrame:
+    """Scarica una famiglia (Advanced / Four Factors) cumulata dall'inizio a date_to."""
     last = None
-    for a in range(1, RETRIES+1):
+    for attempt in range(1, RETRIES + 1):
         try:
-            df = leaguedashteamstats.LeagueDashTeamStats(
+            res = leaguedashteamstats.LeagueDashTeamStats(
                 season=SEASON,
                 season_type_all_star="Regular Season",
-                measure_type_detailed_defense=measure,   # "Advanced" | "Four Factors"
+                league_id_nullable="00",                # NBA only
+                measure_type_detailed_defense=measure,  # "Advanced" | "Four Factors"
                 per_mode_detailed="PerGame",
-                date_to_nullable=dstr,
-                timeout=TIMEOUT
-            ).get_data_frames()[0]
-            df.columns = [c.upper() for c in df.columns]  # normalizza
+                date_from_nullable=date_from,           # cumulata da start
+                date_to_nullable=date_to,               # fino a date_to
+                timeout=TIMEOUT,
+                pace_adjust="N",
+                plus_minus="N",
+                rank="N",
+            )
+            df = res.get_data_frames()[0]
+            df.columns = [c.upper() for c in df.columns]
             return df
         except (ReadTimeout, ConnectionError, KeyError) as e:
             last = e
-            print(f"⚠️  {measure} {dstr} tentativo {a}/{RETRIES}: {e}")
-            time.sleep(2*a)
-    print(f"❌  fallito {measure} {dstr}: {last}")
+            print(f"⚠️  {measure} {date_to} tentativo {attempt}/{RETRIES}: {e}")
+            time.sleep(2 * attempt)
+    print(f"❌  fallito {measure} {date_to}: {last}")
     return pd.DataFrame()
 
 def fetch_day(day: dt.date) -> pd.DataFrame:
-    dstr = day.strftime("%m/%d/%Y")
-    adv = _fetch("Advanced", dstr)
-    ff  = _fetch("Four Factors", dstr)
+    d_to = day.strftime("%m/%d/%Y")
+    d_from = SEASON_START.strftime("%m/%d/%Y")
+
+    adv = _fetch("Advanced", d_from, d_to)
+    ff  = _fetch("Four Factors", d_from, d_to)
 
     if adv.empty and ff.empty:
         return pd.DataFrame()
 
-    # Colonne chiave attese
-    # Advanced: TEAM_ID, TEAM_ABBREVIATION?, PACE, OFF_RATING, DEF_RATING, NET_RATING
-    # Four Factors: TEAM_ID, TS_PCT, EFG_PCT
     keep_adv = ["TEAM_ID","TEAM_ABBREVIATION","TEAM_NAME","PACE","OFF_RATING","DEF_RATING","NET_RATING"]
     keep_ff  = ["TEAM_ID","TS_PCT","EFG_PCT"]
+
     for c in keep_adv:
         if c not in adv.columns:
             adv[c] = pd.NA
@@ -84,9 +93,10 @@ def fetch_day(day: dt.date) -> pd.DataFrame:
 
     out = adv.merge(ff, on="TEAM_ID", how="left")
 
-    # ABBREV fallback
+    # Fallback abbreviazione
     if "TEAM_ABBREVIATION" not in out or out["TEAM_ABBREVIATION"].isna().all():
         out["TEAM_ABBREVIATION"] = out["TEAM_ID"].map(TEAM_ID_TO_ABBR)
+
     out.rename(columns={
         "TEAM_ABBREVIATION":"TEAM",
         "OFF_RATING":"OFFRTG",
@@ -100,21 +110,46 @@ def fetch_day(day: dt.date) -> pd.DataFrame:
     cols = ["TEAM","TEAM_ID","PACE","OFFRTG","DEFRTG","NETRTG","TS","EFG","DATE"]
     return out[cols]
 
-def main():
-    today = dt.date.today()
-    start = SEASON_START
+def parse_args():
+    p = argparse.ArgumentParser(description="Aggiorna team stats cumulative NBA 2025-26 (incrementale).")
+    p.add_argument("--since", type=str, default=None, help="YYYY-MM-DD: forza inizio aggiornamento da questa data (inclusa).")
+    p.add_argument("--days", type=int, default=None, help="Aggiorna solo gli ultimi N giorni (override di --since).")
+    p.add_argument("--today-only", action="store_true", help="Aggiorna solo la data di oggi.")
+    return p.parse_args()
 
+def main():
+    args = parse_args()
+    today = dt.date.today()  # timezone locale
+
+    # Carica eventuale esistente
     existing = None
+    last_in_file = None
     if OUT.exists():
         existing = pd.read_csv(OUT)
         if not existing.empty and "DATE" in existing.columns:
-            last = pd.to_datetime(existing["DATE"]).max().date()
-            if last >= start:
-                start = last + dt.timedelta(days=1)
-            print(f"🗓️  ultima data registrata: {last}")
+            last_in_file = pd.to_datetime(existing["DATE"]).max().date()
+            print(f"🗓️  ultima data registrata: {last_in_file}")
 
+    # Determina start
+    if args.today_only:
+        start = today
+    elif args.days is not None and args.days > 0:
+        start = max(SEASON_START, today - dt.timedelta(days=args.days - 1))
+    elif args.since:
+        start = max(SEASON_START, dt.date.fromisoformat(args.since))
+    elif last_in_file and last_in_file >= SEASON_START:
+        start = last_in_file + dt.timedelta(days=1)
+    else:
+        start = SEASON_START
+
+    if start > today:
+        print("Nessun aggiornamento richiesto (start > today).")
+        return
+
+    # Accumula risultati
     dfs = []
     if existing is not None and not existing.empty:
+        # Mantieni storico
         dfs.append(existing)
 
     for day in pd.date_range(start, today):
@@ -123,7 +158,7 @@ def main():
         df = fetch_day(d)
         if not df.empty:
             dfs.append(df)
-        time.sleep(1.0)
+        time.sleep(0.8)  # rate limit friendly
 
     if not dfs:
         print("Nessun aggiornamento.")
@@ -131,8 +166,7 @@ def main():
 
     comb = pd.concat(dfs, ignore_index=True)
     comb["DATE"] = pd.to_datetime(comb["DATE"]).dt.date
-    comb = comb.drop_duplicates(subset=["TEAM_ID","DATE"], keep="last")
-    OUT.parent.mkdir(parents=True, exist_ok=True)
+    comb = comb.drop_duplicates(subset=["TEAM_ID","DATE"], keep="last").sort_values(["DATE","TEAM_ID"])
     comb.to_csv(OUT, index=False)
     print(f"✅ Aggiornato {OUT} ({len(comb)} righe)")
 
