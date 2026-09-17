@@ -15,6 +15,8 @@ Esegue:
 9) recommend_bets_today.py               (best effort)
 10) update_master_and_append.py          (REAL_TOTAL + append predictions)
 11) build_mae_history.py                 (MAE storico reale)
+12) append_summary_to_stats.py           (aggiorna predictions_master_enriched.csv e/o report)
+13) notify_telegram.py                   (messaggio con partite e totali stimati)
 
 Uso:
     python daily_run.py
@@ -52,10 +54,27 @@ def log_print(msg: str):
 
 
 def run(label, cmd_list, check=True):
+    """
+    Esegue uno step della pipeline. L'output dello script viene mostrato a schermo
+    E scritto nel log: senza questo, un fallimento lascia nel log solo "❌ ERRORE"
+    e il traceback si perde con la finestra del terminale.
+    """
     log_print(f"\n▶️  {label}")
-    rc = subprocess.run([sys.executable, *cmd_list]).returncode
+    proc = subprocess.Popen(
+        [sys.executable, "-u", *cmd_list],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1,
+    )
+    # Streaming riga per riga: l'avanzamento resta visibile durante gli step lunghi
+    # (backfill, download) e finisce comunque nel log.
+    with proc.stdout:
+        for line in proc.stdout:
+            log_print(line.rstrip("\n"))
+    rc = proc.wait()
     if check and rc != 0:
-        log_print(f"❌ ERRORE in step: {label}")
+        log_print(f"❌ ERRORE in step: {label} (exit code {rc})")
         sys.exit(rc)
     if rc == 0:
         log_print(f"✅ {label} completato")
@@ -130,20 +149,24 @@ def main():
             log_print("⏭️  Non abbastanza partite concluse: skip training.")
 
     # 8) Prediction today
-    log_print("\n▶️ Predizioni giornata")
-    subprocess.run([sys.executable, str(ROOT / "predict_today.py")], check=False)
-    log_print("✅ Predizioni completate")
+    run("Predizioni giornata", [str(ROOT / "predict_today.py")], check=False)
 
     # 9) Recommended bets
-    log_print("\n▶️ Raccomandazioni giornata")
-    subprocess.run([sys.executable, str(ROOT / "recommend_bets_today.py")], check=False)
-    log_print("✅ Raccomandazioni completate")
+    run("Raccomandazioni giornata", [str(ROOT / "recommend_bets_today.py")], check=False)
 
     # 10) Update master
     optional("Update master (REAL_TOTAL + append today)", "update_master_and_append.py")
 
     # 11) MAE history
     optional("Build MAE history", "build_mae_history.py")
+
+    # 12) Predictions master enriched / stats report
+    optional("Build predictions master enriched", "append_summary_to_stats.py")
+    # Se vuoi anche il report aggregato giornaliero:
+    # optional("Build stats report", "build_stats_report.py")
+
+    # 13) Notifica Telegram con partite e totali stimati
+    optional("Notifica Telegram", "notify_telegram.py")
 
     log_print("\n🎯 DAILY RUN COMPLETATA")
 

@@ -27,6 +27,23 @@ from config_season_2526 import SEASON_START, SEASON_END, DATA_DIR  # noqa: E402
 OUTPUT = DATA_DIR / "injuries_2025_26.csv"
 OUTPUT.parent.mkdir(parents=True, exist_ok=True)
 
+# Giorni di calendario: serve per non chiedere report nei giorni senza partite
+SCHEDULE = DATA_DIR / "dataset_regular_2025_26.csv"
+
+
+def _game_days() -> set | None:
+    """
+    Date in cui si gioca, dal dataset partite. Serve a evitare centinaia di 403
+    su giorni senza partite (pausa All-Star, fine stagione, giorni vuoti).
+    Ritorna None se il calendario non è leggibile: in quel caso si prova ogni giorno.
+    """
+    try:
+        df = pd.read_csv(SCHEDULE, usecols=["GAME_DATE"])
+        days = pd.to_datetime(df["GAME_DATE"], errors="coerce").dropna().dt.normalize()
+        return set(days.unique()) or None
+    except Exception:
+        return None
+
 # === Prova import opzionale di nbainjuries ===
 try:
     from nbainjuries import injury  # type: ignore
@@ -104,12 +121,23 @@ def main() -> None:
     today = pd.to_datetime(datetime.now(timezone.utc)).tz_localize(None).normalize()
     end_date = min(pd.to_datetime(SEASON_END).normalize(), today)
 
+    game_days = _game_days()
+    if game_days is None:
+        print("ℹ️ Calendario non disponibile: provo ogni giorno del range.")
+
     d = start_date
+    skipped = 0
     while d <= end_date:
-        df_day = fetch_one_day(d)
-        if df_day is not None:
-            all_reports.append(df_day)
+        if game_days is not None and d not in game_days:
+            skipped += 1
+        else:
+            df_day = fetch_one_day(d)
+            if df_day is not None:
+                all_reports.append(df_day)
         d = (d + pd.Timedelta(days=1)).normalize()
+
+    if skipped:
+        print(f"⏭️  Saltati {skipped} giorni senza partite in calendario.")
 
     # salvataggio finale
     if all_reports:

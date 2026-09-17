@@ -5,9 +5,12 @@ Scarica e aggiorna i dati giorno-per-giorno per la stagione 2025–26 (NBA).
 - OGGI: schedule (game_header, line_score se già disponibile)
 
 Strategia:
-1) Prova nba_api.stats.endpoints.scoreboardv2 (con retry e patch WinProbability)
-2) Fallback: CDN ufficiale NBA (json liveData), da cui costruiamo GH/LS
-3) Normalizzazione rigorosa degli ID e append con dedupe
+1) Fonte primaria: nba_api.stats.endpoints.scoreboardv2 (game_header + line_score)
+2) Fallback robusto: file locale dati/schedule_full_2025_26.csv (schedule ESPN completo)
+   - valida per tutta la stagione 2025-26, passato/presente/futuro
+3) Normalizzazione rigorosa degli ID e append con dedupe nei master:
+   - dati/dataset_raw_2025_26.csv  (GH)
+   - dati/schedule_raw_2025_26.csv (LS)
 4) Autoripresa: se il master ha buchi tra ultima data e oggi, riempie i giorni mancanti
 
 ⚠️ FIX: non scrivere mai 0–0 per partite future o non-finali.
@@ -21,7 +24,6 @@ from typing import Tuple, Optional
 
 import pandas as pd
 import numpy as np
-import requests
 from requests.exceptions import ReadTimeout, ConnectionError
 from nba_api.stats.endpoints import scoreboardv2
 
@@ -42,11 +44,20 @@ MASTER_S = path_schedule_raw()  # line score master
 GH_COLS = ["GAME_ID", "GAME_DATE_EST", "GAME_STATUS_TEXT", "HOME_TEAM_ID", "VISITOR_TEAM_ID"]
 LS_COLS = ["GAME_ID", "TEAM_ID", "TEAM_ABBREVIATION", "TEAM_CITY_NAME", "TEAM_NAME", "PTS"]
 
+# Root progetto e path schedule full ESPN
+ROOT = Path(__file__).resolve().parent
+SCHEDULE_FULL = ROOT / "dati" / "schedule_full_2025_26.csv"
+
+# cache in memoria per schedule_full
+_SCHED_FULL: Optional[pd.DataFrame] = None
+
 # ================
 # Patch nba_api: ignora WinProbability mancante (bug noto)
 # ================
 import nba_api.stats.endpoints.scoreboardv2 as sbv2_module
 _old_load_response = sbv2_module.ScoreboardV2.load_response
+
+
 def _patched_load_response(self):
     try:
         _old_load_response(self)
@@ -55,19 +66,26 @@ def _patched_load_response(self):
             print("⚠️  WinProbability non trovato, ignorato (bug noto nba_api)")
         else:
             raise
+
+
 sbv2_module.ScoreboardV2.load_response = _patched_load_response
 
 # ================
-# Helpers
+# Helpers base
 # ================
+
+
 def _to_int(x):
     try:
-        if pd.isna(x): return np.nan
+        if pd.isna(x):
+            return np.nan
         s = str(x).strip()
-        if s == "": return np.nan
+        if s == "":
+            return np.nan
         return int(s)
     except Exception:
         return np.nan
+
 
 def _normalize_gh(df: pd.DataFrame) -> pd.DataFrame:
     if df is None or df.empty:
@@ -76,11 +94,12 @@ def _normalize_gh(df: pd.DataFrame) -> pd.DataFrame:
     for c in GH_COLS:
         if c not in out.columns:
             out[c] = pd.NA
-    out["GAME_ID"]         = out["GAME_ID"].map(_to_int).astype("Int64")
-    out["HOME_TEAM_ID"]    = out["HOME_TEAM_ID"].map(_to_int).astype("Int64")
+    out["GAME_ID"] = out["GAME_ID"].map(_to_int).astype("Int64")
+    out["HOME_TEAM_ID"] = out["HOME_TEAM_ID"].map(_to_int).astype("Int64")
     out["VISITOR_TEAM_ID"] = out["VISITOR_TEAM_ID"].map(_to_int).astype("Int64")
-    out["GAME_DATE_EST"]   = pd.to_datetime(out["GAME_DATE_EST"], errors="coerce").dt.date.astype(str)
+    out["GAME_DATE_EST"] = pd.to_datetime(out["GAME_DATE_EST"], errors="coerce").dt.date.astype(str)
     return out[GH_COLS]
+
 
 def _normalize_ls(df: pd.DataFrame) -> pd.DataFrame:
     if df is None or df.empty:
@@ -91,8 +110,9 @@ def _normalize_ls(df: pd.DataFrame) -> pd.DataFrame:
             out[c] = pd.NA
     out["GAME_ID"] = out["GAME_ID"].map(_to_int).astype("Int64")
     out["TEAM_ID"] = out["TEAM_ID"].map(_to_int).astype("Int64")
-    out["PTS"]     = pd.to_numeric(out["PTS"], errors="coerce")
+    out["PTS"] = pd.to_numeric(out["PTS"], errors="coerce")
     return out[LS_COLS]
+
 
 def ensure_master_files():
     MASTER_G.parent.mkdir(parents=True, exist_ok=True)
@@ -104,6 +124,7 @@ def ensure_master_files():
         pd.DataFrame(columns=LS_COLS).to_csv(MASTER_S, index=False)
         print(f"📂 Creato master vuoto: {MASTER_S}")
 
+
 def append_master(df: pd.DataFrame, master_path: Path, subset_cols) -> bool:
     if df is None or df.empty:
         return False
@@ -114,15 +135,16 @@ def append_master(df: pd.DataFrame, master_path: Path, subset_cols) -> bool:
         if c in old.columns and c in df.columns:
             if pd.api.types.is_numeric_dtype(old[c]):
                 old[c] = pd.to_numeric(old[c], errors="coerce").astype("Int64")
-                df[c]  = pd.to_numeric(df[c],  errors="coerce").astype("Int64")
+                df[c] = pd.to_numeric(df[c], errors="coerce").astype("Int64")
             else:
                 old[c] = old[c].astype(str)
-                df[c]  = df[c].astype(str)
+                df[c] = df[c].astype(str)
 
     combo = pd.concat([old, df], ignore_index=True)
     combo = combo.drop_duplicates(subset=subset_cols, keep="last")
     combo.to_csv(master_path, index=False)
     return True
+
 
 def dump_raw(df: pd.DataFrame, day: dt.date, suffix: str) -> Optional[Path]:
     if df is None or df.empty:
@@ -130,6 +152,7 @@ def dump_raw(df: pd.DataFrame, day: dt.date, suffix: str) -> Optional[Path]:
     p = RAW_DIR / f"{day.strftime('%Y%m%d')}_{suffix}.csv"
     df.to_csv(p, index=False)
     return p
+
 
 def _parse_master_last_date() -> Optional[dt.date]:
     try:
@@ -145,15 +168,18 @@ def _parse_master_last_date() -> Optional[dt.date]:
     except Exception:
         return None
 
+
 # ================
 # Fonte 1: NBA API (scoreboardv2)
 # ================
+
+
 def safe_scoreboard_request(day: dt.date) -> Optional[scoreboardv2.ScoreboardV2]:
     for attempt in range(3):
         try:
             sb = scoreboardv2.ScoreboardV2(
                 game_date=day.strftime("%m/%d/%Y"),
-                timeout=DEFAULT_TIMEOUT
+                timeout=DEFAULT_TIMEOUT,
             )
             return sb
         except (ReadTimeout, ConnectionError) as e:
@@ -168,6 +194,7 @@ def safe_scoreboard_request(day: dt.date) -> Optional[scoreboardv2.ScoreboardV2]
             return None
     return None
 
+
 def fetch_gh_nba_api(day: dt.date) -> pd.DataFrame:
     sb = safe_scoreboard_request(day)
     if sb is None:
@@ -176,6 +203,7 @@ def fetch_gh_nba_api(day: dt.date) -> pd.DataFrame:
     if df.empty:
         return pd.DataFrame(columns=GH_COLS)
     return _normalize_gh(df)
+
 
 def fetch_ls_nba_api(day: dt.date) -> pd.DataFrame:
     sb = safe_scoreboard_request(day)
@@ -186,160 +214,228 @@ def fetch_ls_nba_api(day: dt.date) -> pd.DataFrame:
         return pd.DataFrame(columns=LS_COLS)
     return _normalize_ls(df)
 
+
 # ================
-# Fonte 2: CDN ufficiale NBA (fallback robusto)
+# Fonte 2: schedule_full_2025_26.csv (fallback custom)
 # ================
-def fetch_cdn_day(day: dt.date) -> pd.DataFrame:
-    """
-    Ritorna un DF con (per ogni gara del giorno richiesto):
-      GAME_ID, GAME_DATE_EST, GAME_STATUS_TEXT, HOME_TEAM_ID, VISITOR_TEAM_ID,
-      HOME_TRICODE, AWAY_TRICODE, PTS_HOME, PTS_AWAY
 
-    FIX: se la partita NON è 'Final' oppure è in data futura, i PTS vengono forzati a NaN
-         per evitare 0–0 o parziali.
-    """
-    import datetime as _dt
+TEAM_CODE_TO_ID = {
+    # Codici "ufficiali" NBA
+    "ATL": 1610612737,
+    "BOS": 1610612738,
+    "CLE": 1610612739,
+    "NOP": 1610612740,
+    "CHI": 1610612741,
+    "DAL": 1610612742,
+    "DEN": 1610612743,
+    "GSW": 1610612744,
+    "HOU": 1610612745,
+    "LAC": 1610612746,
+    "LAL": 1610612747,
+    "MIA": 1610612748,
+    "MIL": 1610612749,
+    "MIN": 1610612750,
+    "BKN": 1610612751,
+    "NYK": 1610612752,
+    "ORL": 1610612753,
+    "IND": 1610612754,
+    "PHI": 1610612755,
+    "PHX": 1610612756,
+    "POR": 1610612757,
+    "SAC": 1610612758,
+    "SAS": 1610612759,
+    "OKC": 1610612760,
+    "TOR": 1610612761,
+    "UTA": 1610612762,
+    "MEM": 1610612763,
+    "WAS": 1610612764,
+    "DET": 1610612765,
+    "CHA": 1610612766,
+    # Sinonimi/varianti possibili
+    "GS": 1610612744,
+    "BRK": 1610612751,
+    "CHO": 1610612766,
+    "NY": 1610612752,
+    "SA": 1610612759,
+    "NO": 1610612740,
+    "UTAH": 1610612762,
+    "WSH": 1610612764,
+    "LA": 1610612747,  # nel caso comparisse semplicemente "LA"
+}
 
-    def _row_from_g(g, override_date: str | None = None):
-        home = g.get("homeTeam", {}) or {}
-        away = g.get("awayTeam", {}) or {}
+# Mappa ID → abbreviazione canonica a 3 lettere
+TEAM_ID_TO_ABBR = {
+    1610612737: "ATL",
+    1610612738: "BOS",
+    1610612739: "CLE",
+    1610612740: "NOP",
+    1610612741: "CHI",
+    1610612742: "DAL",
+    1610612743: "DEN",
+    1610612744: "GSW",
+    1610612745: "HOU",
+    1610612746: "LAC",
+    1610612747: "LAL",
+    1610612748: "MIA",
+    1610612749: "MIL",
+    1610612750: "MIN",
+    1610612751: "BKN",
+    1610612752: "NYK",
+    1610612753: "ORL",
+    1610612754: "IND",
+    1610612755: "PHI",
+    1610612756: "PHX",
+    1610612757: "POR",
+    1610612758: "SAC",
+    1610612759: "SAS",
+    1610612760: "OKC",
+    1610612761: "TOR",
+    1610612762: "UTA",
+    1610612763: "MEM",
+    1610612764: "WAS",
+    1610612765: "DET",
+    1610612766: "CHA",
+}
 
-        def _num(x):
-            try:
-                return int(x)
-            except Exception:
-                return np.nan
 
-        status = g.get("gameStatusText") or g.get("gameStatus")
-        return {
-            "GAME_ID": g.get("gameId"),
-            "GAME_DATE_EST": override_date or day.isoformat(),
-            "GAME_STATUS_TEXT": status,
-            "HOME_TEAM_ID": _num(home.get("teamId")),
-            "VISITOR_TEAM_ID": _num(away.get("teamId")),
-            "HOME_TRICODE": home.get("teamTricode"),
-            "AWAY_TRICODE": away.get("teamTricode"),
-            "PTS_HOME": _num(home.get("score")),
-            "PTS_AWAY": _num(away.get("score")),
-        }
+def _team_code_to_id(code: str):
+    if pd.isna(code):
+        return pd.NA
+    c = str(code).strip().upper()
+    return TEAM_CODE_TO_ID.get(c, pd.NA)
 
-    def _parse_games(js) -> list[dict]:
-        return (js or {}).get("scoreboard", {}).get("games", []) or []
 
-    ymd = day.strftime("%Y%m%d")
-    url_by_date = f"https://cdn.nba.com/static/json/liveData/scoreboard/scoreboard_{ymd}.json"
-    url_today   = "https://cdn.nba.com/static/json/liveData/scoreboard/todaysScoreboard_00.json"
+def _load_schedule_full() -> pd.DataFrame:
+    """Carica in cache il file dati/schedule_full_2025_26.csv, se esiste."""
+    global _SCHED_FULL
+    if _SCHED_FULL is not None:
+        return _SCHED_FULL
 
-    # --- 1) tenta l’endpoint per data
+    if not SCHEDULE_FULL.exists():
+        print(f"⚠️ schedule_full non trovato: {SCHEDULE_FULL}")
+        _SCHED_FULL = pd.DataFrame()
+        return _SCHED_FULL
+
     try:
-        r = requests.get(url_by_date, headers={"User-Agent": "Mozilla/5.0"}, timeout=30)
-        r.raise_for_status()
-        games = _parse_games(r.json())
-        if games:
-            rows = [_row_from_g(g) for g in games]
-        else:
-            rows = []
-    except Exception:
-        rows = []
+        df = pd.read_csv(SCHEDULE_FULL)
+        if "GAME_DATE" not in df.columns or "GAME_ID" not in df.columns:
+            print("⚠️ schedule_full senza colonne GAME_DATE/GAME_ID, ignorato.")
+            _SCHED_FULL = pd.DataFrame()
+            return _SCHED_FULL
+        df["GAME_DATE"] = pd.to_datetime(df["GAME_DATE"], errors="coerce").dt.date
+        _SCHED_FULL = df
+    except Exception as e:
+        print(f"⚠️ Errore caricando schedule_full: {e}")
+        _SCHED_FULL = pd.DataFrame()
 
-    # --- 2) fallback: todaysScoreboard filtrato per day
-    if not rows:
-        try:
-            r = requests.get(url_today, headers={"User-Agent": "Mozilla/5.0"}, timeout=30)
-            r.raise_for_status()
-            games = _parse_games(r.json())
-            rows = []
-            for g in games:
-                gd_utc = g.get("gameTimeUTC") or g.get("gameTime") or None
-                game_date = None
-                if gd_utc:
-                    try:
-                        dt_utc = dt.datetime.fromisoformat(gd_utc.replace("Z", "+00:00"))
-                        game_date = dt_utc.date()
-                    except Exception:
-                        game_date = None
-                if game_date is None:
-                    gd_et = g.get("gameEt")
-                    if gd_et:
-                        try:
-                            dt_et = dt.datetime.strptime(gd_et.split(" ET")[0], "%m/%d/%Y %I:%M %p")
-                            game_date = dt_et.date()
-                        except Exception:
-                            game_date = None
-                if game_date == day:
-                    rows.append(_row_from_g(g, override_date=day.isoformat()))
-        except Exception as e:
-            print(f"⚠️  CDN NBA nessun dato per {day} (fallback today) – {e}")
-            rows = []
+    return _SCHED_FULL
 
-    # --- FIX anti 0–0 / parziali ---
-    if not rows:
-        return pd.DataFrame(columns=[
-            "GAME_ID","GAME_DATE_EST","GAME_STATUS_TEXT","HOME_TEAM_ID","VISITOR_TEAM_ID",
-            "HOME_TRICODE","AWAY_TRICODE","PTS_HOME","PTS_AWAY"
-        ])
 
-    df = pd.DataFrame(rows)
-    df["GAME_DATE_EST"] = pd.to_datetime(df["GAME_DATE_EST"], errors="coerce").dt.date
+def gh_ls_from_schedule_full(day: dt.date) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    Fallback finale: se NBA API non trova nulla per "day",
+    costruisce GH/LS a partire da dati/schedule_full_2025_26.csv.
 
-    is_final = df["GAME_STATUS_TEXT"].astype(str).str.contains("Final", case=False, na=False)
-    today = dt.date.today()
-
-    # Se NON è 'Final' → azzera i PTS (NaN). Se è futura → comunque NaN.
-    df.loc[~is_final, ["PTS_HOME", "PTS_AWAY"]] = np.nan
-    df.loc[df["GAME_DATE_EST"] > today, ["PTS_HOME", "PTS_AWAY"]] = np.nan
-
-    return df
-
-def gh_ls_from_cdn(cdn_df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame]:
-    if cdn_df is None or cdn_df.empty:
+    - GAME_STATUS_TEXT = "Scheduled"
+    - PTS = NaN
+    """
+    sched = _load_schedule_full()
+    if sched is None or sched.empty:
         return (pd.DataFrame(columns=GH_COLS), pd.DataFrame(columns=LS_COLS))
 
-    gh = cdn_df[["GAME_ID","GAME_DATE_EST","GAME_STATUS_TEXT","HOME_TEAM_ID","VISITOR_TEAM_ID"]].copy()
+    rows = sched[sched["GAME_DATE"] == day]
+    if rows.empty:
+        return (pd.DataFrame(columns=GH_COLS), pd.DataFrame(columns=LS_COLS))
 
-    ls_home = pd.DataFrame({
-        "GAME_ID": cdn_df["GAME_ID"],
-        "TEAM_ID": cdn_df["HOME_TEAM_ID"],
-        "TEAM_ABBREVIATION": cdn_df.get("HOME_TRICODE"),
-        "TEAM_CITY_NAME": "",
-        "TEAM_NAME": "",
-        "PTS": cdn_df["PTS_HOME"],
-    })
-    ls_away = pd.DataFrame({
-        "GAME_ID": cdn_df["GAME_ID"],
-        "TEAM_ID": cdn_df["VISITOR_TEAM_ID"],
-        "TEAM_ABBREVIATION": cdn_df.get("AWAY_TRICODE"),
-        "TEAM_CITY_NAME": "",
-        "TEAM_NAME": "",
-        "PTS": cdn_df["PTS_AWAY"],
-    })
-    ls = pd.concat([ls_home, ls_away], ignore_index=True)
+    gh_rows = []
+    ls_rows = []
 
-    return _normalize_gh(gh), _normalize_ls(ls)
+    for _, r in rows.iterrows():
+        gid = _to_int(r["GAME_ID"])
+        home_code = str(r.get("HOME", "")).strip().upper()
+        away_code = str(r.get("AWAY", "")).strip().upper()
+
+        home_id = _team_code_to_id(home_code)
+        away_id = _team_code_to_id(away_code)
+
+        if pd.isna(home_id) or pd.isna(away_id):
+            print(f"⚠️ schedule_full: TEAM_ID mancante per {home_code}-{away_code} (GAME_ID={r['GAME_ID']})")
+
+        # Abbreviazioni canoniche (3 lettere) per dataset_regular
+        home_abbr = TEAM_ID_TO_ABBR.get(int(home_id)) if not pd.isna(home_id) else home_code
+        away_abbr = TEAM_ID_TO_ABBR.get(int(away_id)) if not pd.isna(away_id) else away_code
+
+        gh_rows.append({
+            "GAME_ID": gid,
+            "GAME_DATE_EST": day.isoformat(),
+            "GAME_STATUS_TEXT": "Scheduled",
+            "HOME_TEAM_ID": home_id,
+            "VISITOR_TEAM_ID": away_id,
+        })
+
+        ls_rows.append({
+            "GAME_ID": gid,
+            "TEAM_ID": home_id,
+            "TEAM_ABBREVIATION": home_abbr,
+            "TEAM_CITY_NAME": "",
+            "TEAM_NAME": "",
+            "PTS": np.nan,
+        })
+        ls_rows.append({
+            "GAME_ID": gid,
+            "TEAM_ID": away_id,
+            "TEAM_ABBREVIATION": away_abbr,
+            "TEAM_CITY_NAME": "",
+            "TEAM_NAME": "",
+            "PTS": np.nan,
+        })
+
+    gh_df = _normalize_gh(pd.DataFrame(gh_rows))
+    ls_df = _normalize_ls(pd.DataFrame(ls_rows))
+    print(f"ℹ️  Usato schedule_full_2025_26.csv per {day}: {len(gh_df)} partite.")
+    return gh_df, ls_df
+
 
 # ================
 # Fetch wrapper con fallback
 # ================
+
+
 def fetch_gh(day: dt.date) -> pd.DataFrame:
+    # 1) NBA API
     gh = fetch_gh_nba_api(day)
     if not gh.empty:
         return gh
-    cdn = fetch_cdn_day(day)
-    gh_cdn, _ = gh_ls_from_cdn(cdn)
-    return gh_cdn
+
+    # 2) schedule_full (valido per tutta la stagione, passato/presente/futuro)
+    if in_season(day):
+        gh_sched, _ = gh_ls_from_schedule_full(day)
+        return gh_sched
+
+    return pd.DataFrame(columns=GH_COLS)
+
 
 def fetch_ls(day: dt.date) -> pd.DataFrame:
+    # 1) NBA API
     ls = fetch_ls_nba_api(day)
-    need_cdn = (ls.empty) or (("PTS" in ls.columns) and pd.to_numeric(ls["PTS"], errors="coerce").isna().all())
-    if not need_cdn:
-        return ls
-    cdn = fetch_cdn_day(day)
-    _, ls_cdn = gh_ls_from_cdn(cdn)
-    return ls_cdn
+    if not ls.empty:
+        # Se NBA API ha PTS non tutti NaN, usiamo quelli
+        if "PTS" in ls.columns and not pd.to_numeric(ls["PTS"], errors="coerce").isna().all():
+            return ls
+
+    # 2) schedule_full (solo struttura, PTS NaN)
+    if in_season(day):
+        _, ls_sched = gh_ls_from_schedule_full(day)
+        return ls_sched
+
+    return pd.DataFrame(columns=LS_COLS)
+
 
 # ================
 # Orchestrazione
 # ================
+
+
 def update_for_day(day: dt.date, label: str):
     if not in_season(day):
         print(f"[SKIP] {label} {day} fuori dalla stagione 2025–26")
@@ -359,6 +455,7 @@ def update_for_day(day: dt.date, label: str):
         print("   raw salvato:", d2.name)
     append_master(ls, MASTER_S, subset_cols=["GAME_ID", "TEAM_ID"])
 
+
 def update_missing_between_last_and_today():
     """Se l'ultima data nel master GH è precedente a ieri, recupera i giorni mancanti."""
     last = _parse_master_last_date()
@@ -371,6 +468,7 @@ def update_missing_between_last_and_today():
             update_for_day(cursor, "BACKFILL")
         cursor += dt.timedelta(days=1)
 
+
 def update_yesterday_and_today():
     today = dt.date.today()
     yesterday = today - dt.timedelta(days=1)
@@ -379,10 +477,137 @@ def update_yesterday_and_today():
     update_for_day(yesterday, "IERI")
     update_for_day(today, "OGGI")
 
+# =====================================================
+# SUPPORTO: CDN liveData
+# =====================================================
+import requests
+
+def fetch_cdn_day(day):
+    """Prova a scaricare scoreboard_YYYYMMDD.json dal CDN NBA.
+       Restituisce dict o {} se non disponibile."""
+    ymd = day.strftime("%Y%m%d")
+    url = f"https://cdn.nba.com/static/json/liveData/scoreboard/scoreboard_{ymd}.json"
+    try:
+        r = requests.get(url, timeout=10)
+        if r.status_code == 200:
+            return r.json()
+    except:
+        pass
+    return {}
+
+def gh_ls_from_cdn(cdn_json):
+    """Converte il JSON del CDN NBA in GH/LS compatibili con la pipeline."""
+    if not cdn_json or "scoreboard" not in cdn_json:
+        return (
+            pd.DataFrame(columns=["GAME_ID","GAME_DATE_EST","GAME_STATUS_TEXT","HOME_TEAM_ID","VISITOR_TEAM_ID"]),
+            pd.DataFrame(columns=["GAME_ID","TEAM_ID","TEAM_ABBREVIATION","TEAM_CITY_NAME","TEAM_NAME","PTS"])
+        )
+
+    games = cdn_json["scoreboard"].get("games", [])
+    gh_rows, ls_rows = [], []
+
+    for g in games:
+        game_id = int(g["gameId"])
+        game_date = g["gameTime"][:10]
+        status = g.get("gameStatusText", "Scheduled")
+
+        home = g["homeTeam"]
+        away = g["awayTeam"]
+
+        gh_rows.append({
+            "GAME_ID": game_id,
+            "GAME_DATE_EST": game_date,
+            "GAME_STATUS_TEXT": status,
+            "HOME_TEAM_ID": int(home["teamId"]),
+            "VISITOR_TEAM_ID": int(away["teamId"]),
+        })
+
+        # line score entries
+        ls_rows.append({
+            "GAME_ID": game_id,
+            "TEAM_ID": int(home["teamId"]),
+            "TEAM_ABBREVIATION": home["teamTricode"],
+            "TEAM_CITY_NAME": home.get("teamCity", ""),
+            "TEAM_NAME": home.get("teamName", ""),
+            "PTS": home.get("score", None)
+        })
+
+        ls_rows.append({
+            "GAME_ID": game_id,
+            "TEAM_ID": int(away["teamId"]),
+            "TEAM_ABBREVIATION": away["teamTricode"],
+            "TEAM_CITY_NAME": away.get("teamCity", ""),
+            "TEAM_NAME": away.get("teamName", ""),
+            "PTS": away.get("score", None)
+        })
+
+    df_gh = pd.DataFrame(gh_rows)
+    df_ls = pd.DataFrame(ls_rows)
+    return df_gh, df_ls
+
+
+# =====================================================
+# SUPPORTO: schedule_full_2025_26.csv (solo struttura)
+# =====================================================
+from pathlib import Path
+
+def gh_ls_from_schedule_full(day):
+    """Ritorna GH/LS sintetici per un giorno dalla schedule_full.
+       Solo struttura — PTS = None.
+    """
+    path_sf = Path("dati/schedule_full_2025_26.csv")
+    if not path_sf.exists():
+        return (
+            pd.DataFrame(columns=["GAME_ID","GAME_DATE_EST","GAME_STATUS_TEXT","HOME_TEAM_ID","VISITOR_TEAM_ID"]),
+            pd.DataFrame(columns=["GAME_ID","TEAM_ID","TEAM_ABBREVIATION","TEAM_CITY_NAME","TEAM_NAME","PTS"])
+        )
+
+    df = pd.read_csv(path_sf, parse_dates=["GAME_DATE"])
+    sub = df[df["GAME_DATE"].dt.date == day]
+
+    if sub.empty:
+        return (
+            pd.DataFrame(columns=["GAME_ID","GAME_DATE_EST","GAME_STATUS_TEXT","HOME_TEAM_ID","VISITOR_TEAM_ID"]),
+            pd.DataFrame(columns=["GAME_ID","TEAM_ID","TEAM_ABBREVIATION","TEAM_CITY_NAME","TEAM_NAME","PTS"])
+        )
+
+    gh_rows, ls_rows = [], []
+
+    for _, r in sub.iterrows():
+        gid = int(r["GAME_ID"])
+        # GH (senza punteggio)
+        gh_rows.append({
+            "GAME_ID": gid,
+            "GAME_DATE_EST": r["GAME_DATE"],
+            "GAME_STATUS_TEXT": "Scheduled",
+            "HOME_TEAM_ID": None,
+            "VISITOR_TEAM_ID": None
+        })
+
+        # LS sintetico
+        ls_rows.append({
+            "GAME_ID": gid,
+            "TEAM_ID": None,
+            "TEAM_ABBREVIATION": r["HOME"],
+            "TEAM_CITY_NAME": "",
+            "TEAM_NAME": "",
+            "PTS": None
+        })
+        ls_rows.append({
+            "GAME_ID": gid,
+            "TEAM_ID": None,
+            "TEAM_ABBREVIATION": r["AWAY"],
+            "TEAM_CITY_NAME": "",
+            "TEAM_NAME": "",
+            "PTS": None
+        })
+
+    return pd.DataFrame(gh_rows), pd.DataFrame(ls_rows)
+
 def update_full_range(start_date=None):
     """Recupera tutti i giorni giocati da inizio stagione fino a oggi."""
     today = dt.date.today()
-    start = start_date or dt.date(2025, 10, 6)  # apertura regular season
+    start = start_date or dt.date(2025, 10, 6)  # apertura regular season (regola se serve)
     ensure_master_files()
     d = start
     while d <= today:
@@ -391,6 +616,7 @@ def update_full_range(start_date=None):
         d += dt.timedelta(days=1)
     print("✅ Completato aggiornamento completo fino a", today)
 
+
 # ====== ENTRYPOINT ======
 if __name__ == "__main__":
     import argparse
@@ -398,10 +624,17 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Aggiorna GH/LS stagione 2025–26 (ieri+oggi, full o una data specifica)."
     )
-    parser.add_argument("--full", action="store_true",
-                        help="recupera tutti i giorni giocati dall'inizio stagione fino a oggi")
-    parser.add_argument("--date", type=str, metavar="YYYY-MM-DD",
-                        help="aggiorna un singolo giorno specifico (es. 2025-10-20)")
+    parser.add_argument(
+        "--full",
+        action="store_true",
+        help="recupera tutti i giorni giocati dall'inizio stagione fino a oggi",
+    )
+    parser.add_argument(
+        "--date",
+        type=str,
+        metavar="YYYY-MM-DD",
+        help="aggiorna un singolo giorno specifico (es. 2025-10-20)",
+    )
     args = parser.parse_args()
 
     if args.full:

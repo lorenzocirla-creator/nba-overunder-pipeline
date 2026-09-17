@@ -1,3 +1,5 @@
+import json
+import os
 import sys
 from pathlib import Path
 import requests
@@ -9,7 +11,22 @@ from zoneinfo import ZoneInfo
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 from config_season_2526 import DATA_DIR
 
-API_KEY = "a1e0538e26784a65340eb6fb8ef6ac43"  # la tua key Odds API
+# Chiave letta da variabile d'ambiente o da dati/odds_config.json.
+# Non va scritta nel sorgente: questo file è versionato in git.
+def _load_api_key() -> str:
+    key = os.environ.get("ODDS_API_KEY")
+    if key:
+        return key
+    cfg = DATA_DIR / "odds_config.json"
+    if cfg.exists():
+        try:
+            return json.loads(cfg.read_text(encoding="utf-8")).get("api_key", "")
+        except Exception as e:
+            print(f"⚠️ {cfg} non leggibile: {e}")
+    return ""
+
+
+API_KEY = _load_api_key()
 SPORT = "basketball_nba"
 MARKET = "totals"   # over/under
 REGION = "us"       # bookmakers USA

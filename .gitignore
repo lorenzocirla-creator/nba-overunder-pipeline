@@ -30,3 +30,8 @@ dati/raw/
 *.tmp
 *.bak
 *.swp
+
+# === Credenziali ===
+dati/telegram_config.json
+dati/odds_config.json
+espn_raw.html

@@ -7,6 +7,7 @@ import pandas as pd
 # aggiungo la cartella padre (2025_2026) a sys.path
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 from config_season_2526 import DATA_DIR
+from team_names import to_abbr
 
 INPUT_PATH = DATA_DIR / "dataset_regular_2025_26.csv"
 ODDS_PATH = DATA_DIR / "odds_2025_26.csv"
@@ -78,6 +79,14 @@ def add_closing_line(window: int = 10) -> pd.DataFrame:
     odds = _safe_read_csv(ODDS_PATH, required_cols=REQ_ODDS_COLS)
     if "GAME_DATE" in odds.columns:
         odds["GAME_DATE"] = pd.to_datetime(odds["GAME_DATE"], errors="coerce")
+
+    # Le quote arrivano con il nome esteso ("Los Angeles Lakers"), il dataset usa le
+    # sigle: senza questa normalizzazione il merge non aggancia nulla e le linee
+    # reali restano NaN (era il caso fino a questa correzione).
+    for c in ["HOME_TEAM", "AWAY_TEAM"]:
+        if c in odds.columns:
+            odds[c] = odds[c].map(to_abbr)
+    odds = odds[odds["HOME_TEAM"].notna() & odds["AWAY_TEAM"].notna()]
 
     # Merge con odds (left, per non perdere righe)
     df = df.merge(
