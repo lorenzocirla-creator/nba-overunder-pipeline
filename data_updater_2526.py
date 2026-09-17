@@ -37,7 +37,17 @@ from config_season_2526 import (
     RAW_DIR,
 )
 
-DEFAULT_TIMEOUT = 90
+# stats.nba.com spesso non risponde da rete residenziale: timeout corto, pochi
+# tentativi. Il recupero dei dati è garantito dal fallback ESPN (schedule_full).
+DEFAULT_TIMEOUT = 20
+MAX_ATTEMPTS = 2
+
+# Circuit breaker: dopo troppi giorni consecutivi falliti si smette di interrogare
+# l'API NBA per il resto del run. Senza questo, un backfill di 142 giorni impiega
+# ~11 ore di soli timeout prima di arrivare al fallback.
+MAX_CONSECUTIVE_FAILURES = 3
+_consecutive_failures = 0
+_nba_api_disabled = False
 MASTER_G = path_dataset_raw()   # game header master
 MASTER_S = path_schedule_raw()  # line score master
 
@@ -175,23 +185,32 @@ def _parse_master_last_date() -> Optional[dt.date]:
 
 
 def safe_scoreboard_request(day: dt.date) -> Optional[scoreboardv2.ScoreboardV2]:
-    for attempt in range(3):
+    global _consecutive_failures, _nba_api_disabled
+
+    if _nba_api_disabled:
+        return None
+
+    for attempt in range(MAX_ATTEMPTS):
         try:
             sb = scoreboardv2.ScoreboardV2(
                 game_date=day.strftime("%m/%d/%Y"),
                 timeout=DEFAULT_TIMEOUT,
             )
+            _consecutive_failures = 0
             return sb
         except (ReadTimeout, ConnectionError) as e:
-            print(f"⚠️  Timeout NBA API ({type(e).__name__}) – tentativo {attempt+1}/3")
-            if attempt < 2:
-                time.sleep(10)
-            else:
-                print("❌ Errore persistente su NBA API.")
-                return None
+            print(f"⚠️  Timeout NBA API ({type(e).__name__}) – tentativo {attempt+1}/{MAX_ATTEMPTS}")
+            if attempt < MAX_ATTEMPTS - 1:
+                time.sleep(3)
         except Exception as e:
             print(f"⚠️  Errore NBA API: {e}")
-            return None
+            break
+
+    _consecutive_failures += 1
+    if _consecutive_failures >= MAX_CONSECUTIVE_FAILURES and not _nba_api_disabled:
+        _nba_api_disabled = True
+        print(f"🚫 NBA API non raggiungibile ({_consecutive_failures} giorni falliti di fila): "
+              f"disattivata per questo run, si prosegue con il calendario ESPN.")
     return None
 
 
