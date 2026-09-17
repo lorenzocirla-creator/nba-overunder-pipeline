@@ -1,12 +1,17 @@
 # analyze_data_readiness.py
+import sys as _sys
+from pathlib import Path as _Path
+_sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
+from config_season import SEASON_TAG
+
 from pathlib import Path
 import pandas as pd
 import numpy as np
 
 ROOT = Path(__file__).resolve().parent
-P_REG = ROOT / "dati" / "dataset_regular_2025_26.csv"
-P_GH  = ROOT / "dati" / "dataset_raw_2025_26.csv"
-P_LS  = ROOT / "dati" / "schedule_raw_2025_26.csv"
+P_REG = ROOT / "dati" / f"dataset_regular_{SEASON_TAG}.csv"
+P_GH  = ROOT / "dati" / f"dataset_raw_{SEASON_TAG}.csv"
+P_LS  = ROOT / "dati" / f"schedule_raw_{SEASON_TAG}.csv"
 
 # Target principale usato dal modello (cambia se diverso)
 TARGET = "TOTAL_POINTS"

@@ -1,4 +1,9 @@
 # features/add_injuries.py
+import sys as _sys
+from pathlib import Path as _Path
+_sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
+from config_season import SEASON_TAG
+
 import sys
 from pathlib import Path
 from datetime import timedelta
@@ -142,7 +147,7 @@ def _resolve_player_stats_columns(df: pd.DataFrame):
 # ---------------- Main ----------------
 def add_injuries(dataset_path=None, output_path=None):
     if dataset_path is None:
-        dataset_path = DATA_DIR / "dataset_regular_2025_26.csv"
+        dataset_path = DATA_DIR / f"dataset_regular_{SEASON_TAG}.csv"
     if output_path is None:
         output_path = DATA_DIR / "dataset_injuries.csv"
 
@@ -158,7 +163,7 @@ def add_injuries(dataset_path=None, output_path=None):
             games[col] = 0.0 if "IMPACT" in col else 0.0
 
     # --- Carica Injury Report
-    injuries_path = DATA_DIR / "injuries_2025_26.csv"
+    injuries_path = DATA_DIR / f"injuries_{SEASON_TAG}.csv"
     if (not injuries_path.exists()) or injuries_path.stat().st_size == 0:
         print("⚠️ File infortuni mancante o vuoto, creo solo colonne.")
         games.to_csv(output_path, index=False)
@@ -179,7 +184,7 @@ def add_injuries(dataset_path=None, output_path=None):
     injuries["TEAM_ABBR"] = injuries.get("Team", "").apply(normalize_team_abbr)
 
     # --- Carica Player Stats (per top scorer)
-    player_stats_path = DATA_DIR / "player_stats_2025_26.csv"
+    player_stats_path = DATA_DIR / f"player_stats_{SEASON_TAG}.csv"
     if (not player_stats_path.exists()) or player_stats_path.stat().st_size == 0:
         print("⚠️ File player_stats mancante o vuoto, creo solo colonne.")
         games.to_csv(output_path, index=False)

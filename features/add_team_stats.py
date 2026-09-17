@@ -1,4 +1,9 @@
 # features/add_team_stats.py
+import sys as _sys
+from pathlib import Path as _Path
+_sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
+from config_season import SEASON_TAG
+
 from pathlib import Path
 import pandas as pd
 import numpy as np
@@ -13,10 +18,10 @@ for cand in [ROOT / "dati", ROOT / "dati_2025_2026"]:
 else:
     DATA_DIR = ROOT / "dati"
 
-REG_PATH        = DATA_DIR / "dataset_regular_2025_26.csv"
-RAW_GH_PATH     = DATA_DIR / "dataset_raw_2025_26.csv"
-TEAMSTATS_PATH  = DATA_DIR / "team_stats_2025_26.csv"
-TEAMEXTRA_PATH  = DATA_DIR / "team_stats_extra_2025_26.csv"
+REG_PATH        = DATA_DIR / f"dataset_regular_{SEASON_TAG}.csv"
+RAW_GH_PATH     = DATA_DIR / f"dataset_raw_{SEASON_TAG}.csv"
+TEAMSTATS_PATH  = DATA_DIR / f"team_stats_{SEASON_TAG}.csv"
+TEAMEXTRA_PATH  = DATA_DIR / f"team_stats_extra_{SEASON_TAG}.csv"
 
 TEAM_ID_TO_ABBR = {
     1610612737:"ATL",1610612738:"BOS",1610612739:"CLE",1610612740:"NOP",

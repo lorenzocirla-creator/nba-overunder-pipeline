@@ -18,6 +18,7 @@ import subprocess
 from pathlib import Path
 import pandas as pd
 from config_season_2526 import FEATURE_FLAGS
+from config_season import SEASON_TAG
 # from features.add_rolling_pace import add_rolling_pace
 
 ROOT = Path(__file__).resolve().parent
@@ -33,8 +34,8 @@ else:
     DATA_DIR = ROOT / "dati"
     DATA_DIR.mkdir(parents=True, exist_ok=True)
 
-DATASET = DATA_DIR / "dataset_regular_2025_26.csv"
-TEAM_STATS_PATH = DATA_DIR / "team_stats_2025_26.csv"
+DATASET = DATA_DIR / f"dataset_regular_{SEASON_TAG}.csv"
+TEAM_STATS_PATH = DATA_DIR / f"team_stats_{SEASON_TAG}.csv"
 
 FEATURES = ROOT / "features"
 
@@ -70,11 +71,17 @@ def main():
         print(f"✅ File team_stats già presente ({TEAM_STATS_PATH}), uso dati esistenti.")
     else:
         print(f"⚙️ Rigenero team_stats perché mancante o vuoto → {TEAM_STATS_PATH}")
-        # usa lo script collaudato che hai lanciato manualmente
-        run("Fetch team stats (LeagueDashTeamStats)", [str(ROOT / "data_teamstats_2526.py")])
+        # Non bloccante: le team stats arrivano da stats.nba.com, che spesso non
+        # risponde. Il modello di produzione (model_v2) non le usa, quindi la
+        # pipeline deve proseguire anche senza.
+        rc = subprocess.run([sys.executable, str(ROOT / "data_teamstats_2526.py")]).returncode
+        if rc != 0:
+            print("⚠️ Team stats non disponibili: proseguo senza.")
 
     # ora effettua il merge delle team stats sul dataset
-    run("Add team stats", [str(FEATURES / "add_team_stats.py")])
+    rc = subprocess.run([sys.executable, str(FEATURES / "add_team_stats.py")]).returncode
+    if rc != 0:
+        print("⚠️ Merge team stats fallito: proseguo senza queste feature.")
 
     # 2) Calendario e forma
     run("Add back-to-back",   [str(FEATURES / "add_backtoback.py")])

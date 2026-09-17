@@ -4,6 +4,11 @@ Scarica e costruisce le statistiche giocatori NBA 2025–26 (Per Game) per l'uso
 Output: dati_2025_2026/player_stats_2025_26.csv con colonne: PLAYER, TEAM, PPG
 """
 
+import sys as _sys
+from pathlib import Path as _Path
+_sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
+from config_season import SEASON_TAG, TARGET_SEASON, TARGET_SEASON
+
 import time
 import sys
 from pathlib import Path
@@ -15,7 +20,7 @@ from config_season_2526 import DATA_DIR
 
 from nba_api.stats.endpoints import leaguedashplayerstats
 
-OUT_CSV = DATA_DIR / "player_stats_2025_26.csv"
+OUT_CSV = DATA_DIR / f"player_stats_{SEASON_TAG}.csv"
 
 NBA_TEAMS = {
     "ATL","BOS","BKN","CHA","CHI","CLE","DAL","DEN","DET","GSW","HOU","IND",
@@ -23,7 +28,7 @@ NBA_TEAMS = {
     "POR","SAC","SAS","TOR","UTA","WAS"
 }
 
-def fetch_player_stats(season="2025-26", retries=3, sleep_sec=2) -> pd.DataFrame:
+def fetch_player_stats(season=TARGET_SEASON, retries=3, sleep_sec=2) -> pd.DataFrame:
     last_err = None
     for _ in range(retries):
         try:
@@ -43,7 +48,7 @@ def fetch_player_stats(season="2025-26", retries=3, sleep_sec=2) -> pd.DataFrame
 def build():
     print("⏳ Download statistiche giocatori 2025–26 dalla NBA API…")
     try:
-        df_full = fetch_player_stats(season="2025-26")
+        df_full = fetch_player_stats(season=TARGET_SEASON)
     except Exception as e:
         print(f"⚠️ API non disponibile o nessun dato: {e}")
         df_empty = pd.DataFrame(columns=["PLAYER", "TEAM", "PPG"])

@@ -22,13 +22,14 @@ import pandas as pd
 # === Import config ===
 sys.path.append(str(Path(__file__).resolve().parent))
 from config_season_2526 import SEASON_START, SEASON_END, DATA_DIR  # noqa: E402
+from config_season import SEASON_TAG
 
 # === Path output ===
-OUTPUT = DATA_DIR / "injuries_2025_26.csv"
+OUTPUT = DATA_DIR / f"injuries_{SEASON_TAG}.csv"
 OUTPUT.parent.mkdir(parents=True, exist_ok=True)
 
 # Giorni di calendario: serve per non chiedere report nei giorni senza partite
-SCHEDULE = DATA_DIR / "dataset_regular_2025_26.csv"
+SCHEDULE = DATA_DIR / f"dataset_regular_{SEASON_TAG}.csv"
 
 
 def _game_days() -> set | None:

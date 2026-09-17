@@ -1,4 +1,9 @@
 # backfill_points.py  (versione robusta: niente PTS_HOME/PTS_AWAY obbligatori)
+import sys as _sys
+from pathlib import Path as _Path
+_sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
+from config_season import SEASON_TAG
+
 from pathlib import Path
 import pandas as pd
 import numpy as np
@@ -6,9 +11,9 @@ import numpy as np
 # 🔁 AGGIUSTA QUI se hai spostato la cartella
 BASE = Path("/Users/lorenzocirla/Desktop/NBA_2025_2026/dati")
 
-GH_PATH  = BASE / "dataset_raw_2025_26.csv"        # game header master
-LS_PATH  = BASE / "schedule_raw_2025_26.csv"       # line_score master
-REG_PATH = BASE / "dataset_regular_2025_26.csv"    # dataset per modello
+GH_PATH  = BASE / f"dataset_raw_{SEASON_TAG}.csv"        # game header master
+LS_PATH  = BASE / f"schedule_raw_{SEASON_TAG}.csv"       # line_score master
+REG_PATH = BASE / f"dataset_regular_{SEASON_TAG}.csv"    # dataset per modello
 
 def read_csv(p):
     return pd.read_csv(p) if p.exists() else pd.DataFrame()

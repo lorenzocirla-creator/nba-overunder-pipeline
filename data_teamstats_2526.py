@@ -18,15 +18,23 @@ from pathlib import Path
 import pandas as pd
 from requests.exceptions import ReadTimeout, ConnectionError
 from nba_api.stats.endpoints import leaguedashteamstats
+from config_season import SEASON_TAG, TARGET_SEASON
 
 ROOT = Path(__file__).resolve().parent
-OUT = ROOT.parent / "dati" / "team_stats_2025_26.csv"  # ../dati/...
+OUT = ROOT.parent / "dati" / f"team_stats_{SEASON_TAG}.csv"  # ../dati/...
 OUT.parent.mkdir(parents=True, exist_ok=True)
 
-SEASON = "2025-26"
+SEASON = TARGET_SEASON
 SEASON_START = dt.date(2025, 10, 21)  # Regular tipoff (aggiusta se necessario)
-TIMEOUT = 60
-RETRIES = 3
+TIMEOUT = 20
+RETRIES = 2
+
+# stats.nba.com è spesso irraggiungibile: dopo alcuni fallimenti consecutivi si
+# smette di interrogarlo per il resto del run, invece di accumulare timeout su
+# ogni giornata della stagione.
+MAX_CONSECUTIVE_FAILURES = 3
+_consecutive_failures = 0
+_api_disabled = False
 
 # Mappa fallback TEAM_ID -> ABBR
 TEAM_ID_TO_ABBR = {
@@ -42,6 +50,11 @@ TEAM_ID_TO_ABBR = {
 
 def _fetch(measure: str, date_from: str, date_to: str) -> pd.DataFrame:
     """Scarica una famiglia (Advanced / Four Factors) cumulata dall'inizio a date_to."""
+    global _consecutive_failures, _api_disabled
+
+    if _api_disabled:
+        return pd.DataFrame()
+
     last = None
     for attempt in range(1, RETRIES + 1):
         try:
@@ -60,11 +73,18 @@ def _fetch(measure: str, date_from: str, date_to: str) -> pd.DataFrame:
             )
             df = res.get_data_frames()[0]
             df.columns = [c.upper() for c in df.columns]
+            _consecutive_failures = 0
             return df
         except (ReadTimeout, ConnectionError, KeyError) as e:
             last = e
             print(f"⚠️  {measure} {date_to} tentativo {attempt}/{RETRIES}: {e}")
             time.sleep(2 * attempt)
+
+    _consecutive_failures += 1
+    if _consecutive_failures >= MAX_CONSECUTIVE_FAILURES and not _api_disabled:
+        _api_disabled = True
+        print(f"🚫 stats.nba.com non raggiungibile ({_consecutive_failures} fallimenti "
+              f"di fila): team stats saltate per questo run.")
     print(f"❌  fallito {measure} {date_to}: {last}")
     return pd.DataFrame()
 

@@ -20,6 +20,7 @@ Operazioni:
 from pathlib import Path
 import pandas as pd
 import numpy as np
+from config_season import SEASON_TAG
 
 ROOT = Path(__file__).resolve().parent
 
@@ -31,7 +32,7 @@ for cand in [ROOT / "dati", ROOT / "dati_2025_2026"]:
 else:
     DATA_DIR = ROOT / "dati"
 
-REG_PATH = DATA_DIR / "dataset_regular_2025_26.csv"
+REG_PATH = DATA_DIR / f"dataset_regular_{SEASON_TAG}.csv"
 
 
 def detect_total_points(df: pd.DataFrame) -> pd.Series:

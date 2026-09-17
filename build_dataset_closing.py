@@ -12,9 +12,10 @@ Output: dataset_closing.csv con colonne:
 
 import pandas as pd
 from pathlib import Path
+from config_season import SEASON_TAG
 
 BASE = Path(__file__).resolve().parent
-SRC = BASE / "dati" / "dataset_regular_2025_26.csv"
+SRC = BASE / "dati" / f"dataset_regular_{SEASON_TAG}.csv"
 OUT = BASE / "dati" / "dataset_closing.csv"
 
 print("📂 Sorgente:", SRC)

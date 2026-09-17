@@ -25,17 +25,19 @@ Uso:
     python daily_run.py --min-rows 25
 """
 
+import os
 import sys
 import argparse
 import subprocess
 from pathlib import Path
 from datetime import date
 import pandas as pd
+from config_season import SEASON_TAG
 
 ROOT = Path(__file__).resolve().parent
 DATA = ROOT / "dati"
 LOGS = ROOT / "logs"
-REG_PATH = DATA / "dataset_regular_2025_26.csv"
+REG_PATH = DATA / f"dataset_regular_{SEASON_TAG}.csv"
 
 LOGS.mkdir(parents=True, exist_ok=True)
 LOG_FILE = LOGS / "log_daily.txt"
@@ -44,8 +46,15 @@ LOG_FILE = LOGS / "log_daily.txt"
 # -------------------------------------
 # Logging
 # -------------------------------------
+# run_daily.sh redirige già stdout nel log: in quel caso scrivere anche sul file
+# raddoppierebbe ogni riga.
+_STDOUT_ALREADY_LOGGED = os.environ.get("NBA_LOG_REDIRECTED") == "1"
+
+
 def log_print(msg: str):
     print(msg, flush=True)
+    if _STDOUT_ALREADY_LOGGED:
+        return
     try:
         with LOG_FILE.open("a", encoding="utf-8") as f:
             f.write(msg + "\n")
@@ -120,6 +129,9 @@ def main():
 
     log_print("\n🏀 DAILY RUN NBA 2025–26 – START")
 
+    # 0) Quote di mercato: vanno prese PRIMA della partita, non dopo
+    optional("Scarico quote", "features/download_odds.py")
+
     # 1) Update raw data
     updater_args = [str(ROOT / "data_updater_2526.py")]
     if args.full:
@@ -148,8 +160,10 @@ def main():
         else:
             log_print("⏭️  Non abbastanza partite concluse: skip training.")
 
-    # 8) Prediction today
-    run("Predizioni giornata", [str(ROOT / "predict_today.py")], check=False)
+    # 8) Predizioni del giorno
+    # model_v2 si allena anche sulle stagioni archiviate: a inizio stagione le
+    # partite nuove sono zero e predict_today non avrebbe nulla su cui allenarsi.
+    run("Predizioni giornata", [str(ROOT / "model_v2.py"), "--predict"], check=False)
 
     # 9) Recommended bets
     run("Raccomandazioni giornata", [str(ROOT / "recommend_bets_today.py")], check=False)
@@ -167,6 +181,13 @@ def main():
 
     # 13) Notifica Telegram con partite e totali stimati
     optional("Notifica Telegram", "notify_telegram.py")
+
+    # 14) Controllo fonti dati: avvisa su Telegram se qualcosa ha smesso di rispondere
+    optional("Controllo fonti dati", "health_check.py")
+
+    # 15) Il primo del mese: report sul confronto col mercato
+    if date.today().day == 1:
+        optional("Report mensile", "monthly_report.py")
 
     log_print("\n🎯 DAILY RUN COMPLETATA")
 

@@ -2,6 +2,8 @@
 import requests
 import pandas as pd
 from datetime import date, timedelta
+from config_season import SEASON_TAG, SEASON_START, SEASON_END
+from team_names import to_abbr
 
 BASE_URL = "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard?dates={}"
 
@@ -38,6 +40,11 @@ def get_day_schedule(d):
         home_abbr = home[0]["team"]["abbreviation"]
         away_abbr = away[0]["team"]["abbreviation"]
 
+        home_abbr = to_abbr(home_abbr)
+        away_abbr = to_abbr(away_abbr)
+        if not home_abbr or not away_abbr:
+            continue  # partite non-NBA (All-Star, Rising Stars) o squadre TBD
+
         result.append({
             "GAME_DATE": d.strftime("%Y-%m-%d"),
             "GAME_ID": game_id,
@@ -51,8 +58,8 @@ def get_day_schedule(d):
 def download_full_schedule():
     print("📅 Scarico l'intera stagione NBA 2025–26 da ESPN API...")
 
-    start = date(2025, 10, 21)   # start season
-    end   = date(2026, 4, 15)    # end regular season
+    start = SEASON_START
+    end = SEASON_END
 
     all_games = []
 
@@ -66,7 +73,7 @@ def download_full_schedule():
     df = pd.DataFrame(all_games)
     df = df.sort_values(["GAME_DATE", "GAME_ID"], ignore_index=True)
 
-    out_path = "dati/schedule_full_2025_26.csv"
+    out_path = f"dati/schedule_full_{SEASON_TAG}.csv"
     df.to_csv(out_path, index=False)
 
     print("\n📁 Salvato:", out_path)

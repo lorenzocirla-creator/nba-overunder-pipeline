@@ -4,6 +4,7 @@ from pathlib import Path
 from datetime import datetime
 import pandas as pd
 import pytz
+from config_season import SEASON_TAG
 
 # Percorsi
 ROOT = Path(__file__).resolve().parent
@@ -11,7 +12,7 @@ DATI = ROOT / "dati"
 PRED_DIR = ROOT / "predictions"
 
 MASTER_PATH = DATI / "predictions_master_enriched.csv"
-REGULAR_PATH = DATI / "dataset_regular_2025_26.csv"
+REGULAR_PATH = DATI / f"dataset_regular_{SEASON_TAG}.csv"
 
 # Nuovo ordine colonne
 MASTER_COLS = [

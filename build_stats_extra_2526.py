@@ -31,14 +31,15 @@ from pathlib import Path
 import pandas as pd
 from requests.exceptions import ReadTimeout, ConnectionError
 from nba_api.stats.endpoints import leaguedashteamstats
+from config_season import SEASON_TAG, TARGET_SEASON
 
 ROOT = Path(__file__).resolve().parent
 DATA_DIR = ROOT / "dati"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
-OUT = DATA_DIR / "team_stats_extra_2025_26.csv"
+OUT = DATA_DIR / f"team_stats_extra_{SEASON_TAG}.csv"
 
-SEASON = "2025-26"
+SEASON = TARGET_SEASON
 # Data d'inizio stagione regolare 2025-26 (adatta se serve)
 SEASON_START = dt.date(2025, 10, 21)
 

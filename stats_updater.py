@@ -17,11 +17,12 @@ from datetime import date, timedelta, datetime
 import argparse
 import pandas as pd
 import numpy as np
+from config_season import SEASON_TAG
 
 # --- PATHS ---
 ROOT = Path(__file__).resolve().parent
 PRED_DIR = ROOT / "predictions"
-DATASET_REG = ROOT / "dati" / "dataset_regular_2025_26.csv"
+DATASET_REG = ROOT / "dati" / f"dataset_regular_{SEASON_TAG}.csv"
 OUT_FILE = PRED_DIR / "stats_predictions_vs_results.csv"
 SUMMARY_MD = PRED_DIR / "stats_predictions_vs_results_summary.csv"
 

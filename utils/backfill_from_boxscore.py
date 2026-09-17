@@ -1,4 +1,9 @@
 # backfill_from_boxscore.py
+import sys as _sys
+from pathlib import Path as _Path
+_sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
+from config_season import SEASON_TAG
+
 import pandas as pd
 import numpy as np
 from pathlib import Path
@@ -7,8 +12,8 @@ from nba_api.stats.endpoints import boxscoretraditionalv3
 from nba_api.stats.endpoints import boxscoretraditionalv2
 
 DATA_DIR = Path(__file__).resolve().parent / "dati"
-P_REG = DATA_DIR / "dataset_regular_2025_26.csv"
-P_LS  = DATA_DIR / "schedule_raw_2025_26.csv"
+P_REG = DATA_DIR / f"dataset_regular_{SEASON_TAG}.csv"
+P_LS  = DATA_DIR / f"schedule_raw_{SEASON_TAG}.csv"
 
 def fetch_team_pts_from_boxscore(game_id: str | int, timeout=60):
     gid = str(game_id)

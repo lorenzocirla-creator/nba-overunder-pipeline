@@ -1,9 +1,14 @@
 # backfill_missing_pts.py
+import sys as _sys
+from pathlib import Path as _Path
+_sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
+from config_season import SEASON_TAG
+
 import pandas as pd, numpy as np, requests, datetime as dt
 from pathlib import Path
 
 DATA_DIR = Path(__file__).resolve().parent / "dati"
-P_LS = DATA_DIR / "schedule_raw_2025_26.csv"
+P_LS = DATA_DIR / f"schedule_raw_{SEASON_TAG}.csv"
 
 def fetch_cdn_day(day: dt.date) -> pd.DataFrame:
     ymd = day.strftime("%Y%m%d")

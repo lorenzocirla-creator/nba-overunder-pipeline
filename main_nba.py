@@ -13,12 +13,13 @@ from sklearn.metrics import mean_absolute_error, mean_squared_error
 
 from xgboost import XGBRegressor
 from catboost import CatBoostRegressor
+from config_season import SEASON_TAG
 
 # ===============================
 # ⚙️ Config
 # ===============================
 ROOT = Path(__file__).resolve().parent
-DATA_PATH = ROOT / "dati" / "dataset_regular_2025_26.csv"
+DATA_PATH = ROOT / "dati" / f"dataset_regular_{SEASON_TAG}.csv"
 OUTPUT_DIR = ROOT / "outputs"
 OUTPUT_PATH = OUTPUT_DIR / "predictions.csv"
 

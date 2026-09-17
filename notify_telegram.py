@@ -24,29 +24,13 @@ from datetime import date, datetime
 from pathlib import Path
 
 import pandas as pd
-import requests
+
+from config_season import PRED_DIR, season_progress
+import telegram
 
 ROOT = Path(__file__).resolve().parent
-PRED_DIR = ROOT / "predictions"
-CONFIG = ROOT / "dati" / "telegram_config.json"
-
-API = "https://api.telegram.org/bot{token}/sendMessage"
 
 
-def load_credentials() -> tuple[str | None, str | None]:
-    token = os.environ.get("TELEGRAM_BOT_TOKEN")
-    chat_id = os.environ.get("TELEGRAM_CHAT_ID")
-    if token and chat_id:
-        return token, chat_id
-
-    if CONFIG.exists():
-        try:
-            cfg = json.loads(CONFIG.read_text(encoding="utf-8"))
-            return cfg.get("bot_token") or token, str(cfg.get("chat_id") or chat_id or "") or None
-        except Exception as e:
-            print(f"⚠️ {CONFIG} non leggibile: {e}")
-
-    return token, chat_id
 
 
 def build_message(target: date) -> str | None:
@@ -68,7 +52,7 @@ def build_message(target: date) -> str | None:
         return None
 
     # Linea di mercato, se disponibile
-    line_col = next((c for c in ["FINAL_LINE", "CLOSING_LINE", "CURRENT_LINE", "BASE_LINE"]
+    line_col = next((c for c in ["MARKET_LINE", "CLOSING_LINE", "CURRENT_LINE", "FINAL_LINE", "BASE_LINE"]
                      if c in df.columns and pd.to_numeric(df[c], errors="coerce").notna().any()), None)
 
     giorno = target.strftime("%d/%m/%Y")
@@ -84,7 +68,8 @@ def build_message(target: date) -> str | None:
             if pd.notna(line):
                 delta = pred - line
                 segno = "OVER" if delta > 0 else "UNDER"
-                riga += f" (linea {line:.1f} → {segno} {abs(delta):.1f})"
+                etichetta = "quota" if line_col == "MARKET_LINE" else "stima interna"
+                riga += f" ({etichetta} {line:.1f} → {segno} {abs(delta):.1f})"
         righe.append(riga)
 
     # Raccomandazioni, se lo step le ha prodotte
@@ -109,37 +94,8 @@ def build_message(target: date) -> str | None:
     return "\n".join(righe)
 
 
-def send(token: str, chat_id: str, text: str) -> bool:
-    try:
-        r = requests.post(
-            API.format(token=token),
-            json={"chat_id": chat_id, "text": text, "parse_mode": "HTML",
-                  "disable_web_page_preview": True},
-            timeout=20,
-        )
-        if r.status_code == 200:
-            print("✅ Messaggio Telegram inviato.")
-            return True
-        print(f"❌ Telegram ha risposto {r.status_code}: {r.text[:300]}")
-    except requests.RequestException as e:
-        print(f"❌ Invio Telegram fallito: {type(e).__name__}: {e}")
-    return False
 
 
-def print_setup_help() -> None:
-    print("""
-ℹ️ Telegram non configurato: il messaggio non è stato inviato.
-
-Per attivarlo (una volta sola):
-  1. Su Telegram apri @BotFather → /newbot → scegli nome e username.
-     BotFather risponde con un token tipo 123456789:AAG...
-  2. Scrivi un messaggio qualsiasi al tuo bot (serve ad aprire la chat).
-  3. Apri nel browser:
-     https://api.telegram.org/bot<TOKEN>/getUpdates
-     e copia il valore di  "chat":{"id": ...}
-  4. Crea il file dati/telegram_config.json con:
-     {"bot_token": "IL_TUO_TOKEN", "chat_id": "IL_TUO_CHAT_ID"}
-""")
 
 
 def main() -> None:
@@ -155,19 +111,7 @@ def main() -> None:
         print("⏭️  Niente da inviare.")
         return
 
-    if args.dry_run:
-        print("--- ANTEPRIMA MESSAGGIO ---")
-        print(text)
-        return
-
-    token, chat_id = load_credentials()
-    if not token or not chat_id:
-        print_setup_help()
-        print("--- Messaggio che sarebbe stato inviato ---")
-        print(text)
-        return
-
-    send(token, chat_id, text)
+    telegram.send_message(text, dry_run=args.dry_run)
 
 
 if __name__ == "__main__":

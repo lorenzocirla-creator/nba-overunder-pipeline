@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 import pandas as pd
+from config_season import SEASON_TAG
 
-path = "dati/dataset_regular_2025_26.csv"
+path = f"dati/dataset_regular_{SEASON_TAG}.csv"
 
 df = pd.read_csv(path, parse_dates=["GAME_DATE"])
 

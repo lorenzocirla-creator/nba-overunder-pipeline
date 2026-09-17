@@ -30,7 +30,8 @@ from nba_api.stats.endpoints import scoreboardv2
 # ================
 # Config stagione
 # ================
-from config_season_2526 import (
+from config_season import (
+    SEASON_TAG,
     in_season,
     path_dataset_raw,
     path_schedule_raw,
@@ -56,7 +57,7 @@ LS_COLS = ["GAME_ID", "TEAM_ID", "TEAM_ABBREVIATION", "TEAM_CITY_NAME", "TEAM_NA
 
 # Root progetto e path schedule full ESPN
 ROOT = Path(__file__).resolve().parent
-SCHEDULE_FULL = ROOT / "dati" / "schedule_full_2025_26.csv"
+SCHEDULE_FULL = ROOT / "dati" / f"schedule_full_{SEASON_TAG}.csv"
 
 # cache in memoria per schedule_full
 _SCHED_FULL: Optional[pd.DataFrame] = None
@@ -574,7 +575,7 @@ def gh_ls_from_schedule_full(day):
     """Ritorna GH/LS sintetici per un giorno dalla schedule_full.
        Solo struttura — PTS = None.
     """
-    path_sf = Path("dati/schedule_full_2025_26.csv")
+    path_sf = Path(f"dati/schedule_full_{SEASON_TAG}.csv")
     if not path_sf.exists():
         return (
             pd.DataFrame(columns=["GAME_ID","GAME_DATE_EST","GAME_STATUS_TEXT","HOME_TEAM_ID","VISITOR_TEAM_ID"]),

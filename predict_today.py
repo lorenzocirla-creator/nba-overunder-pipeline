@@ -10,12 +10,13 @@ from sklearn.impute import SimpleImputer
 from sklearn.preprocessing import StandardScaler
 from xgboost import XGBRegressor
 from catboost import CatBoostRegressor
+from config_season import SEASON_TAG
 
 # ============
 # Path & setup
 # ============
 ROOT = Path(__file__).resolve().parent
-DATA_REG = ROOT / "dati" / "dataset_regular_2025_26.csv"
+DATA_REG = ROOT / "dati" / f"dataset_regular_{SEASON_TAG}.csv"
 PRED_DIR = ROOT / "predictions"
 PRED_DIR.mkdir(parents=True, exist_ok=True)
 

@@ -7,6 +7,11 @@ Aggiunge colonna:
 Default: ultimi 5 scontri diretti.
 """
 
+import sys as _sys
+from pathlib import Path as _Path
+_sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
+from config_season import SEASON_TAG
+
 import pandas as pd
 import sys
 from pathlib import Path
@@ -45,7 +50,7 @@ def add_h2h_features(last_n: int = 5):
     print(f"✅ H2H (ultimi {last_n} scontri) aggiunti. Dataset aggiornato: {dataset_path}")
 
     # 🔹 Aggiorna anche il master
-    master_path = DATA_DIR / "dataset_regular_2025_26.csv"
+    master_path = DATA_DIR / f"dataset_regular_{SEASON_TAG}.csv"
     df.to_csv(master_path, index=False)
     print(f"📌 Master dataset aggiornato in {master_path}")
 

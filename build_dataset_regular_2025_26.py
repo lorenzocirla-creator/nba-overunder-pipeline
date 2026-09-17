@@ -31,7 +31,8 @@ from datetime import date
 import pandas as pd
 import numpy as np
 
-from config_season_2526 import (
+from config_season import (
+    SEASON_TAG,
     path_dataset_raw,
     path_schedule_raw,
     path_dataset_regular,
@@ -140,7 +141,7 @@ def _restore_game_date(merged: pd.DataFrame, gh_norm: pd.DataFrame) -> pd.DataFr
 # =================================================
 
 def _integrate_manual_totals(merged: pd.DataFrame, gh_norm: pd.DataFrame, today: date) -> pd.DataFrame:
-    manual_path = OUT.parent / "manual_totals_2025_26.csv"
+    manual_path = OUT.parent / f"manual_totals_{SEASON_TAG}.csv"
 
     if not (manual_path.exists() and manual_path.stat().st_size >= 4):
         return merged
@@ -227,6 +228,62 @@ def _integrate_closing(merged: pd.DataFrame, gh_norm: pd.DataFrame, today: date)
     return merged
 
 # =================================================
+# Integrazione del dataset già costruito (self-healing)
+# =================================================
+
+def _integrate_previous_output(merged: pd.DataFrame) -> pd.DataFrame:
+    """
+    Riprende i punteggi dal dataset costruito nei run precedenti.
+
+    Il dataset viene ricostruito da zero a ogni esecuzione: senza questo passaggio
+    i risultati già acquisiti andrebbero persi ogni volta che la fonte esterna non
+    li ripropone (ESPN viene interrogata solo sulle ultime giornate), e il file si
+    svuoterebbe progressivamente.
+    """
+    if not (OUT.exists() and OUT.stat().st_size >= 4):
+        return merged
+
+    prev = _safe_read_csv(OUT)
+    if prev.empty or "GAME_DATE" not in prev.columns:
+        return merged
+
+    prev = _ensure_cols(prev, ["GAME_DATE", "HOME_TEAM", "AWAY_TEAM",
+                               "PTS_HOME", "PTS_AWAY", "TOTAL_POINTS"])
+    prev["GAME_DATE"] = pd.to_datetime(prev["GAME_DATE"], errors="coerce").dt.date
+    for c in ["HOME_TEAM", "AWAY_TEAM"]:
+        prev[c] = prev[c].apply(_to_abbr)
+    for c in ["PTS_HOME", "PTS_AWAY", "TOTAL_POINTS"]:
+        prev[c] = pd.to_numeric(prev[c], errors="coerce")
+
+    prev = prev.dropna(subset=["GAME_DATE", "HOME_TEAM", "AWAY_TEAM"])
+    prev = prev[prev["TOTAL_POINTS"].notna()]
+    if prev.empty:
+        return merged
+
+    prev = prev.drop_duplicates(subset=["GAME_DATE", "HOME_TEAM", "AWAY_TEAM"], keep="last")
+    prev = prev.rename(columns={"PTS_HOME": "PTS_HOME_PREV",
+                                "PTS_AWAY": "PTS_AWAY_PREV",
+                                "TOTAL_POINTS": "TOTAL_PREV"})
+
+    merged = merged.merge(
+        prev[["GAME_DATE", "HOME_TEAM", "AWAY_TEAM",
+              "PTS_HOME_PREV", "PTS_AWAY_PREV", "TOTAL_PREV"]],
+        on=["GAME_DATE", "HOME_TEAM", "AWAY_TEAM"], how="left",
+    )
+    for col, prev_col in [("PTS_HOME", "PTS_HOME_PREV"),
+                          ("PTS_AWAY", "PTS_AWAY_PREV"),
+                          ("TOTAL_POINTS", "TOTAL_PREV")]:
+        merged[col] = pd.to_numeric(merged[col], errors="coerce").fillna(merged[prev_col])
+
+    recovered = int(merged["TOTAL_PREV"].notna().sum())
+    merged.drop(columns=["PTS_HOME_PREV", "PTS_AWAY_PREV", "TOTAL_PREV"],
+                inplace=True, errors="ignore")
+    if recovered:
+        print(f"♻️  Recuperati {recovered} risultati dal dataset precedente.")
+    return merged
+
+
+# =================================================
 # Integrazione calendario completo ESPN
 # =================================================
 
@@ -239,7 +296,7 @@ def _integrate_schedule_full(merged: pd.DataFrame, today: date) -> pd.DataFrame:
     si ferma all'ultimo giorno scaricato con successo da nba_api e la stagione
     resta monca. Le partite già presenti non vengono toccate.
     """
-    sched_path = OUT.parent / "schedule_full_2025_26.csv"
+    sched_path = OUT.parent / f"schedule_full_{SEASON_TAG}.csv"
     if not (sched_path.exists() and sched_path.stat().st_size >= 4):
         return merged
 
@@ -401,9 +458,24 @@ def build() -> Path:
     ls = _safe_read_csv(LINES)
 
     if gh.empty:
-        pd.DataFrame(columns=BASE_COLS).to_csv(OUT, index=False)
-        print(f"⚠️ Game header vuoto. Creato dataset vuoto in {OUT}")
-        return OUT
+        # Nessun dato dai master NBA (stats.nba.com irraggiungibile, o inizio stagione).
+        # Non è un motivo per fermarsi: il calendario ESPN basta a costruire il dataset.
+        print("ℹ️ Game header NBA vuoto: costruisco dal solo calendario ESPN.")
+        empty = pd.DataFrame(columns=[
+            "GAME_ID", "GAME_DATE", "HOME_TEAM", "AWAY_TEAM",
+            "PTS_HOME", "PTS_AWAY", "TOTAL_POINTS", "GAME_STATUS_TEXT",
+        ])
+        merged = _integrate_schedule_full(empty, today)
+
+        if merged.empty:
+            pd.DataFrame(columns=BASE_COLS).to_csv(OUT, index=False)
+            print(f"⚠️ Nessuna fonte disponibile. Creato dataset vuoto in {OUT}")
+            return OUT
+
+        gh_norm = merged[["GAME_ID", "GAME_DATE"]].copy()
+        merged = _integrate_previous_output(merged)
+        merged = _integrate_espn(merged, gh_norm, today)
+        return _finalize(merged, today)
 
     # 2) Normalizzazione GH
     gh = _ensure_cols(gh, ["GAME_ID","GAME_DATE_EST","HOME_TEAM_ID","VISITOR_TEAM_ID","GAME_STATUS_TEXT"])
@@ -491,10 +563,40 @@ def build() -> Path:
     # 6) Calendario completo ESPN (partite che i master NBA non hanno)
     merged = _integrate_schedule_full(merged, today)
 
+    # 6b) Risultati già acquisiti nei run precedenti
+    merged = _integrate_previous_output(merged)
+
     # 7) ESPN fallback per i punteggi mancanti
     merged = _integrate_espn(merged, gh_norm, today)
 
-    # 7) IS_FINAL e logica 0–0 future/non-final
+    return _finalize(merged, today)
+
+
+def _finalize(merged: pd.DataFrame, today: date) -> Path:
+    """Calcola IS_FINAL, ripulisce gli 0-0 sulle partite non giocate e salva."""
+    merged = _ensure_cols(merged, ["PTS_HOME", "PTS_AWAY", "TOTAL_POINTS", "GAME_STATUS_TEXT"])
+
+    # Righe impossibili viste nei master NBA: senza data, o con la stessa squadra
+    # in casa e in trasferta. Vanno scartate prima di qualsiasi altra logica.
+    n0 = len(merged)
+    merged = merged[merged["GAME_DATE"].notna()]
+    merged = merged[merged["HOME_TEAM"].notna() & merged["AWAY_TEAM"].notna()]
+    merged = merged[merged["HOME_TEAM"] != merged["AWAY_TEAM"]]
+    if len(merged) != n0:
+        print(f"🧽 Scartate {n0 - len(merged)} righe non valide (data mancante o squadra duplicata).")
+
+    # Una partita può arrivare sia dai master NBA sia dal calendario ESPN, con
+    # GAME_ID diversi: la chiave logica è data + squadre. Si tiene la riga con il
+    # punteggio, altrimenti il file cresce di duplicati a ogni run.
+    before = len(merged)
+    merged["_HAS_SCORE"] = pd.to_numeric(merged["TOTAL_POINTS"], errors="coerce").notna()
+    merged = (merged.sort_values("_HAS_SCORE")
+                    .drop_duplicates(subset=["GAME_DATE", "HOME_TEAM", "AWAY_TEAM"], keep="last")
+                    .drop(columns=["_HAS_SCORE"]))
+    if before != len(merged):
+        print(f"🧹 Deduplica: {before} → {len(merged)} righe.")
+
+    # IS_FINAL e logica 0–0 future/non-final
     merged["PTS_HOME"] = pd.to_numeric(merged["PTS_HOME"], errors="coerce")
     merged["PTS_AWAY"] = pd.to_numeric(merged["PTS_AWAY"], errors="coerce")
 

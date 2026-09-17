@@ -1,3 +1,8 @@
+import sys as _sys
+from pathlib import Path as _Path
+_sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
+from config_season import SEASON_TAG
+
 import json
 import os
 import sys
@@ -30,7 +35,7 @@ API_KEY = _load_api_key()
 SPORT = "basketball_nba"
 MARKET = "totals"   # over/under
 REGION = "us"       # bookmakers USA
-ODDS_FILE = DATA_DIR / "odds_2025_26.csv"
+ODDS_FILE = DATA_DIR / f"odds_{SEASON_TAG}.csv"
 
 
 def fetch_odds():

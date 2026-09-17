@@ -1,9 +1,10 @@
 from pathlib import Path
 import pandas as pd
 from datetime import date
+from config_season import SEASON_TAG
 
 ROOT = Path(__file__).resolve().parent
-DATASET = ROOT / "dati" / "dataset_regular_2025_26.csv"
+DATASET = ROOT / "dati" / f"dataset_regular_{SEASON_TAG}.csv"
 
 def main():
     if not DATASET.exists():

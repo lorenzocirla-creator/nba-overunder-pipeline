@@ -11,6 +11,11 @@ Logica:
 - Prima partita stagione → default = 3 giorni (o altro valore "neutro").
 """
 
+import sys as _sys
+from pathlib import Path as _Path
+_sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
+from config_season import SEASON_TAG
+
 import pandas as pd
 import sys
 from pathlib import Path
@@ -54,7 +59,7 @@ def add_rest_days(default_rest: int = 3):
     print(f"✅ Rest days aggiunti. Dataset aggiornato: {dataset_path}")
 
     # 🔹 Aggiorna anche il master
-    master_path = DATA_DIR / "dataset_regular_2025_26.csv"
+    master_path = DATA_DIR / f"dataset_regular_{SEASON_TAG}.csv"
     df.to_csv(master_path, index=False)
     print(f"📌 Master dataset aggiornato in {master_path}")
 

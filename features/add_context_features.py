@@ -17,6 +17,11 @@ Colonne gestite (create se mancanti):
 - END_SEASON_FLAG, ALL_STAR_FLAG, PLAYOFF_RACE_FLAG
 """
 
+import sys as _sys
+from pathlib import Path as _Path
+_sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
+from config_season import SEASON_TAG
+
 import pandas as pd
 import sys
 from pathlib import Path
@@ -177,7 +182,7 @@ def add_context_features():
     # Salvataggio
     df.to_csv(dataset_path, index=False)
     from config_season_2526 import DATA_DIR
-    master_path = DATA_DIR / "dataset_regular_2025_26.csv"
+    master_path = DATA_DIR / f"dataset_regular_{SEASON_TAG}.csv"
     df.to_csv(master_path, index=False)
 
     print(f"✅ Context features aggiunte. Dataset aggiornato: {dataset_path}")

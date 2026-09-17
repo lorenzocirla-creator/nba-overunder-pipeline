@@ -11,8 +11,9 @@ Corregge le sigle squadra nello schedule_full_2025_26.csv
 
 import pandas as pd
 from pathlib import Path
+from config_season import SEASON_TAG
 
-FILE = Path("dati/schedule_full_2025_26.csv")
+FILE = Path(f"dati/schedule_full_{SEASON_TAG}.csv")
 
 TEAM_FIX = {
     "NO": "NOP",

@@ -1,4 +1,9 @@
 # features/add_closing_line.py
+import sys as _sys
+from pathlib import Path as _Path
+_sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
+from config_season import SEASON_TAG
+
 import sys
 from pathlib import Path
 import numpy as np
@@ -9,9 +14,9 @@ sys.path.append(str(Path(__file__).resolve().parent.parent))
 from config_season_2526 import DATA_DIR
 from team_names import to_abbr
 
-INPUT_PATH = DATA_DIR / "dataset_regular_2025_26.csv"
-ODDS_PATH = DATA_DIR / "odds_2025_26.csv"
-OUTPUT_REGULAR = DATA_DIR / "dataset_regular_2025_26.csv"
+INPUT_PATH = DATA_DIR / f"dataset_regular_{SEASON_TAG}.csv"
+ODDS_PATH = DATA_DIR / f"odds_{SEASON_TAG}.csv"
+OUTPUT_REGULAR = DATA_DIR / f"dataset_regular_{SEASON_TAG}.csv"
 OUTPUT_CLOSING = DATA_DIR / "dataset_closing.csv"
 
 REQ_ODDS_COLS = ["GAME_DATE", "HOME_TEAM", "AWAY_TEAM", "CURRENT_LINE", "CLOSING_LINE"]

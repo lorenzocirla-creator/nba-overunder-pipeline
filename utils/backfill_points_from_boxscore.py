@@ -1,12 +1,17 @@
 # backfill_points_from_boxscore.py
+import sys as _sys
+from pathlib import Path as _Path
+_sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
+from config_season import SEASON_TAG
+
 import pandas as pd
 import numpy as np
 import requests
 from pathlib import Path
 
 DATA_DIR = Path(__file__).resolve().parent / "dati"
-P_REG = DATA_DIR / "dataset_regular_2025_26.csv"
-P_LS  = DATA_DIR / "schedule_raw_2025_26.csv"   # master line_score
+P_REG = DATA_DIR / f"dataset_regular_{SEASON_TAG}.csv"
+P_LS  = DATA_DIR / f"schedule_raw_{SEASON_TAG}.csv"   # master line_score
 
 BOX_URL = "https://cdn.nba.com/static/json/liveData/boxscore/boxscore_{gid}.json"
 HEADERS = {"User-Agent": "Mozilla/5.0"}

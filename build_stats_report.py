@@ -18,13 +18,14 @@ from datetime import date, timedelta
 import pandas as pd
 import numpy as np
 import glob
+from config_season import SEASON_TAG
 
 ROOT = Path(__file__).resolve().parent
 DATA_DIR = ROOT / "dati"
 PRED_DIR = ROOT / "predictions"
 PRED_DIR.mkdir(parents=True, exist_ok=True)
 
-DATASET_REGULAR = DATA_DIR / "dataset_regular_2025_26.csv"
+DATASET_REGULAR = DATA_DIR / f"dataset_regular_{SEASON_TAG}.csv"
 OUT_FILE = PRED_DIR / "stats_predictions_vs_results.csv"
 MAE_HISTORY = PRED_DIR / "mae_history.csv"
 

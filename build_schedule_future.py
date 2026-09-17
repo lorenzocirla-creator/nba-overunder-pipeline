@@ -8,8 +8,9 @@ import requests
 import datetime as dt
 import pandas as pd
 from pathlib import Path
+from config_season import SEASON_TAG
 
-OUT = Path("dati/schedule_future_2025_26.csv")
+OUT = Path(f"dati/schedule_future_{SEASON_TAG}.csv")
 HEAD = {"User-Agent": "Mozilla/5.0"}
 
 DAYS_FORWARD = 40  # puoi aumentare a 90 se vuoi

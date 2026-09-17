@@ -8,6 +8,11 @@ Aggiunge al dataset le feature di forma e difesa medie recenti:
 Con n = 3, 5, 10.
 """
 
+import sys as _sys
+from pathlib import Path as _Path
+_sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
+from config_season import SEASON_TAG
+
 import pandas as pd
 import sys
 from pathlib import Path
@@ -99,7 +104,7 @@ def add_forma_features():
     print(f"✅ Forma/Difesa aggiunte (3,5,10). Dataset aggiornato: {dataset_path}")
 
     # 🔹 Aggiorna anche il master dataset
-    master_path = DATA_DIR / "dataset_regular_2025_26.csv"
+    master_path = DATA_DIR / f"dataset_regular_{SEASON_TAG}.csv"
     df.to_csv(master_path, index=False)
     print(f"📌 Master dataset aggiornato in {master_path}")
 

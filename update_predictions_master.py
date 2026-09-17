@@ -13,9 +13,10 @@ import pandas as pd
 import numpy as np
 from datetime import date, timedelta, datetime
 import re
+from config_season import SEASON_TAG
 
 MASTER = Path("dati/predictions_master.csv")
-REG    = Path("dati/dataset_regular_2025_26.csv")
+REG    = Path(f"dati/dataset_regular_{SEASON_TAG}.csv")
 
 def _read_any_csv(p: Path) -> pd.DataFrame:
     for sep in [",",";","|","\t"]:

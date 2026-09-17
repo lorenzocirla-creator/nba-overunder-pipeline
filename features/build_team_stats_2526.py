@@ -1,15 +1,20 @@
 # features/build_team_stats_2526.py
 # Genera team_stats_2025_26.csv con le advanced team stats (PACE, OFF/DEF/NET, TS%, eFG%)
 
+import sys as _sys
+from pathlib import Path as _Path
+_sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
+from config_season import SEASON_TAG, TARGET_SEASON
+
 import time
 from pathlib import Path
 import pandas as pd
 
 from nba_api.stats.endpoints import leaguedashteamstats
 
-OUT_PATH = Path(__file__).resolve().parent.parent / "team_stats_2025_26.csv"
+OUT_PATH = Path(__file__).resolve().parent.parent / f"team_stats_{SEASON_TAG}.csv"
 
-def fetch_team_advanced_stats(season="2025-26", season_type="Regular Season", retries=3, sleep_s=2):
+def fetch_team_advanced_stats(season=TARGET_SEASON, season_type="Regular Season", retries=3, sleep_s=2):
     last_err = None
     for attempt in range(1, retries + 1):
         try:
