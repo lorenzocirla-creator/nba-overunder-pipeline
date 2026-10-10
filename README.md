@@ -7,7 +7,16 @@ stima il totale punti delle partite del giorno e manda il risultato su Telegram.
 
 ## Uso quotidiano
 
-Non serve fare niente: il job parte da solo alle **7:30**.
+Dal 10/10/2026 la pipeline gira **nel cloud** (GitHub Actions, `.github/workflows/totali.yml`),
+avviata dal timer Cloudflare della console Dunkest:
+- **mattina, 10:30**: pipeline completa, messaggio Telegram, consuntivo di ieri
+- **sera, 2 ore prima della prima partita**: linee aggiornate (`mercato.py`), avviso solo se una
+  linea si è mossa di almeno 3 punti (`sera.py`)
+I risultati finiscono nella console (sezione "Totali NBA") tramite `outputs/console_totali.json`.
+Secrets: `ODDS_API_KEY` (`python3 imposta_odds.py`), `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`.
+I job launchd sul Mac sono disattivati (in `~/Library/LaunchAgents/disattivati/`).
+
+Uso storico sul Mac (non più automatico): il job partiva alle **7:30**.
 
 Se il Mac era spento a quell'ora, la pipeline parte **all'accensione** e recupera
 i giorni saltati. Se ha già girato con successo in giornata, non si ripete.

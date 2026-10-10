@@ -48,8 +48,6 @@ RC=$?
 if [ $RC -eq 0 ]; then
   echo "$OGGI" > "$STATE"
   echo "=== $(date '+%Y-%m-%d %H:%M:%S') — completata ===" >> "$LOG"
-  # Previsioni anche nella console Dunkest (sezione "Totali NBA"); un errore qui non tocca la pipeline
-  "$PY" /Users/lorenzocirla/dunkest/totali.py >> "$LOG" 2>&1 || true
 else
   echo "=== $(date '+%Y-%m-%d %H:%M:%S') — FALLITA (codice $RC) ===" >> "$LOG"
   # Avvisa su Telegram: un fallimento silenzioso sarebbe indistinguibile da
