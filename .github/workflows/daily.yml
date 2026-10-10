@@ -1,49 +1,74 @@
-name: NBA Daily Run
+name: NBA totali
 
+# Lo fa partire il timer Cloudflare (lo stesso del progetto Dunkest):
+#   - mattina, 10:30: pipeline completa, messaggio Telegram, consuntivo di ieri
+#   - sera, 2 ore prima della prima partita: linee aggiornate, avviso solo se si sono mosse
+# L'esecuzione programmata qui sotto è solo una riserva (GitHub la fa partire in ritardo).
 on:
+  workflow_dispatch:
+    inputs:
+      modalita:
+        description: "mattina oppure sera"
+        required: false
+        default: "mattina"
   schedule:
-    - cron: "0 7 * * *"   # ogni giorno alle 07:00 UTC (~09:00 Italia)
-  workflow_dispatch:       # esecuzione manuale da GitHub Actions
+    - cron: "45 9 * * *"
+
+concurrency:
+  group: totali
+  cancel-in-progress: false
+
+permissions:
+  contents: write
 
 jobs:
-  run-daily:
+  totali:
     runs-on: ubuntu-latest
-
+    timeout-minutes: 40
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
-
-      - name: Install dependencies
+          python-version: "3.11"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Esegui
+        env:
+          ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          MODALITA: ${{ inputs.modalita || 'mattina' }}
+          TZ: Europe/Rome
         run: |
-          pip install -r requirements.txt
-
-      - name: Run daily pipeline
+          mkdir -p logs state
+          if [ "$MODALITA" = "sera" ]; then
+            python mercato.py
+            python sera.py
+          else
+            OGGI=$(date +%Y-%m-%d)
+            ULTIMO=$(cat state/last_success.txt 2>/dev/null || echo mai)
+            if [ "$ULTIMO" = "$OGGI" ]; then
+              echo "pipeline già completata oggi"
+            else
+              EXTRA=""
+              if [ "$ULTIMO" = "mai" ]; then EXTRA="--full"; else
+                GIORNI=$(( ( $(date -d "$OGGI" +%s) - $(date -d "$ULTIMO" +%s) ) / 86400 ))
+                if [ "$GIORNI" -gt 2 ]; then EXTRA="--full"; fi
+              fi
+              python daily_run.py $EXTRA
+              echo "$OGGI" > state/last_success.txt
+            fi
+          fi
+          python esporta_console.py
+      - name: Salva i risultati
+        if: always()
         run: |
-          python3 daily_run.py
-
-      # 🔁 Commit automatico dei risultati generati
-      - name: Commit results
-        if: ${{ success() }}
-        run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add dati/*.csv stats_predictions_vs_results.csv outputs/ predictions/ || true
-          git commit -m "📈 Daily NBA update $(date +'%Y-%m-%d')" || true
-          git push || true
-
-      # 💾 Upload come artifacts scaricabili
-      - name: Upload output artifacts
-        if: ${{ success() }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: nba_daily_outputs
-          path: |
-            dati/*.csv
-            stats_predictions_vs_results.csv
-            outputs/
-            predictions/
+          git config user.name "nba-totali"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A dati outputs predictions state
+          if git diff --cached --quiet; then echo "niente di nuovo"; else
+            git commit -q -m "Totali $(TZ=Europe/Rome date '+%Y-%m-%d %H:%M') ($MODALITA)"
+            git pull -q --rebase && git push -q
+          fi
+        env:
+          MODALITA: ${{ inputs.modalita || 'mattina' }}
