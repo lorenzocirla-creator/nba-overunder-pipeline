@@ -17,6 +17,7 @@ Esegue:
 11) build_mae_history.py                 (MAE storico reale)
 12) append_summary_to_stats.py           (aggiorna predictions_master_enriched.csv e/o report)
 13) notify_telegram.py                   (messaggio con partite e totali stimati)
+13b) consuntivo_telegram.py              (secondo messaggio: come sono andate quelle di ieri)
 
 Uso:
     python daily_run.py
@@ -129,7 +130,9 @@ def main():
 
     log_print("\n🏀 DAILY RUN NBA 2025–26 – START")
 
-    # 0) Quote di mercato: vanno prese PRIMA della partita, non dopo
+    # 0) Linee di mercato. Vanno registrate prima della partita: dopo non
+    # esistono più, e senza archivio non si può sapere se il modello le batte.
+    optional("Registra linee di mercato", "mercato.py")
     optional("Scarico quote", "features/download_odds.py")
 
     # 1) Update raw data
@@ -181,6 +184,10 @@ def main():
 
     # 13) Notifica Telegram con partite e totali stimati
     optional("Notifica Telegram", "notify_telegram.py")
+
+    # 13b) Consuntivo di ieri: le partite della notte sono finite e i risultati
+    # sono stati appena aggiornati, quindi si può dire com'è andata.
+    optional("Consuntivo di ieri", "consuntivo_telegram.py")
 
     # 14) Controllo fonti dati: avvisa su Telegram se qualcosa ha smesso di rispondere
     optional("Controllo fonti dati", "health_check.py")
