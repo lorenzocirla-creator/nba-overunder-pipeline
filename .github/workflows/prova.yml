@@ -1,7 +1,0 @@
-name: prova
-on: workflow_dispatch
-jobs:
-  prova:
-    runs-on: ubuntu-latest
-    steps:
-      - run: echo "funziona"
