@@ -19,8 +19,7 @@ catboost_info/
 *.tfevents
 
 # === Dati dinamici ===
-dati/*.csv
-!dati/manual_totals_2025_26.csv
+# i CSV in dati/ sono tracciati: la pipeline gira nel cloud (GitHub Actions) e ne ha bisogno
 dati/raw/
 
 # === System files ===
