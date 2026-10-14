@@ -28,11 +28,29 @@ def esporta() -> dict:
         p.loc[aperte, "linea"] = recenti[aperte].fillna(p.loc[aperte, "linea"])
     oggi = pd.Timestamp.now(tz="Europe/Rome").strftime("%Y-%m-%d")
 
+    # quanto il totale finale si discosta dalla linea dei bookmaker (stagione 2025/26): serve a dire,
+    # per ogni linea alternativa, quante volte vince l'over e l'under e quindi la quota minima che
+    # rende la scommessa conveniente (sotto quella quota si perde in media)
+    storiche = pd.read_csv(TOTALI / "dati" / "linee_storiche_espn.csv").dropna(subset=["LINEA", "TOTAL_POINTS"])
+    scarti = (storiche["TOTAL_POINTS"] - storiche["LINEA"]).to_numpy()
+
+    def alternative(linea: float) -> list[dict]:
+        out = []
+        for d in (-15, -10, -5, 0, 5, 10, 15):
+            p_over = float((scarti > d).mean())
+            p_under = float((scarti < d).mean())
+            out.append({"linea": linea + d, "p_over": round(p_over, 3), "p_under": round(p_under, 3),
+                        "quota_min_over": round(1 / p_over, 2) if p_over else None,
+                        "quota_min_under": round(1 / p_under, 2) if p_under else None})
+        return out
+
     def riga(x) -> dict:
+        linea = None if pd.isna(x.linea) else float(x.linea)
         return {"data": x.GAME_DATE, "casa": x.HOME_TEAM, "fuori": x.AWAY_TEAM,
                 "stima": None if pd.isna(x.PREDICTED_POINTS) else round(float(x.PREDICTED_POINTS), 1),
-                "linea": None if pd.isna(x.linea) else float(x.linea),
-                "risultato": None if pd.isna(x.TOTAL_POINTS) else int(x.TOTAL_POINTS)}
+                "linea": linea,
+                "risultato": None if pd.isna(x.TOTAL_POINTS) else int(x.TOTAL_POINTS),
+                "alternative": alternative(linea) if linea is not None and pd.isna(x.TOTAL_POINTS) else None}
 
     prossime = p[(p["GAME_DATE"] >= oggi) & p["TOTAL_POINTS"].isna()]
     giocate = p[p["TOTAL_POINTS"].notna() & p["PREDICTED_POINTS"].notna()].copy()
@@ -67,6 +85,7 @@ def esporta() -> dict:
         "ultimi_30_giorni": riassunto(confronto[confronto["GAME_DATE"] >= (pd.Timestamp(oggi) - pd.Timedelta(days=30)).strftime("%Y-%m-%d")]),
         "serie": serie,
         # verifica di settembre 2026 su 1235 partite (memoria del progetto): il modello non batte la linea
+        "partite_distribuzione": int(len(scarti)),
         "verdetto": {"partite": 1235, "errore_modello": 15.29, "errore_linea": 14.58, "correlazione_errori": 0.962},
     }
 
