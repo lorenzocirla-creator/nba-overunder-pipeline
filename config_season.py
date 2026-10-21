@@ -16,7 +16,7 @@ from pathlib import Path
 # === Stagione corrente ===
 SEASON_TAG = "2026_27"          # usato nei nomi dei file
 TARGET_SEASON = "2026-27"       # usato nelle chiamate alle API NBA
-SEASON_START = dt.date(2026, 10, 21)
+SEASON_START = dt.date(2026, 10, 20)   # opening night: 3 partite il 20/10
 SEASON_END = dt.date(2027, 4, 15)
 
 # Stagioni precedenti disponibili come storico di training (dalla più recente)

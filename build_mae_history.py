@@ -31,6 +31,10 @@ def main(inp: str, outp: str):
     # parse data e filtra solo righe con REAL_TOTAL disponibile (per il calcolo MAE day/rolling/season)
     df["GAME_DATE"] = pd.to_datetime(df["GAME_DATE"], errors="coerce").dt.date
 
+    if df["REAL_TOTAL"].notna().sum() == 0:
+        print("ℹ️ Nessuna partita con risultato ancora: storico MAE rimandato.")
+        return
+
     # MAE DAY per data (solo partite con real disponibili quel giorno)
     day_grp = (
         df[df["REAL_TOTAL"].notna()]
