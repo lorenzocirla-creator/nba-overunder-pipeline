@@ -10,8 +10,35 @@ TOTALI = Path(__file__).parent
 USCITA = TOTALI / "outputs" / "console_totali.json"
 
 
+def previsioni_stagione() -> pd.DataFrame:
+    """Previsioni della stagione in corso (predictions/predictions_today_*.csv, una per giorno)
+    con il risultato finale dal dataset della stagione, nello stesso formato di outputs/predictions.csv."""
+    from config_season import SEASON_START, path_dataset_regular
+    parti = []
+    for f in sorted((TOTALI / "predictions").glob("predictions_today_*.csv")):
+        d = pd.read_csv(f)
+        if not d.empty:
+            parti.append(d)
+    if not parti:
+        return pd.DataFrame()
+    p = pd.concat(parti, ignore_index=True)
+    p = p[p["GAME_DATE"] >= SEASON_START.isoformat()].copy()
+    linea = p["MARKET_LINE"] if "MARKET_LINE" in p else pd.Series(np.nan, index=p.index)
+    if "CURRENT_LINE" in p:
+        linea = linea.fillna(p["CURRENT_LINE"])
+    p["CURRENT_LINE"] = linea
+    p["RUN_TIMESTAMP"] = p["RUN_TS"] if "RUN_TS" in p else p["GAME_DATE"]
+    p["FINAL_LINE"] = np.nan
+    ris = pd.read_csv(path_dataset_regular(), usecols=["GAME_DATE", "HOME_TEAM", "AWAY_TEAM", "TOTAL_POINTS"])
+    p = p.drop(columns=["TOTAL_POINTS"], errors="ignore").merge(ris, on=["GAME_DATE", "HOME_TEAM", "AWAY_TEAM"], how="left")
+    return p[["GAME_DATE", "HOME_TEAM", "AWAY_TEAM", "TOTAL_POINTS", "CURRENT_LINE", "FINAL_LINE",
+              "PREDICTED_POINTS", "RUN_TIMESTAMP"]]
+
+
 def esporta() -> dict:
-    p = pd.read_csv(TOTALI / "outputs" / "predictions.csv")
+    # stagione scorsa (outputs/predictions.csv, ferma ad aprile) + stagione in corso
+    p = pd.concat([pd.read_csv(TOTALI / "outputs" / "predictions.csv"), previsioni_stagione()], ignore_index=True)
+    p["RUN_TIMESTAMP"] = p["RUN_TIMESTAMP"].astype(str)
     p = (p.sort_values("RUN_TIMESTAMP")
           .drop_duplicates(["GAME_DATE", "HOME_TEAM", "AWAY_TEAM"], keep="last")
           .sort_values("GAME_DATE"))
