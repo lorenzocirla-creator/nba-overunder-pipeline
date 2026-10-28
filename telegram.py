@@ -1,9 +1,16 @@
 """
 Invio messaggi Telegram — usato da tutti gli avvisi del progetto.
 
+Due destinazioni:
+  - "canale":  il canale pubblico delle previsioni (partite, linee mosse,
+               consuntivo, report mensile). Chiunque può iscriversi.
+  - "privato": la chat di Lorenzo, per gli avvisi tecnici (fonti dati giù,
+               pipeline fallita).
+Finché il canale non è configurato, tutto va alla chat privata.
+
 Credenziali, in ordine di precedenza:
-  1. variabili d'ambiente TELEGRAM_BOT_TOKEN e TELEGRAM_CHAT_ID
-  2. file dati/telegram_config.json  {"bot_token": "...", "chat_id": "..."}
+  1. variabili d'ambiente TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, TELEGRAM_CHANNEL_ID
+  2. file dati/telegram_config.json  {"bot_token": "...", "chat_id": "...", "channel_id": "..."}
 
 Se mancano, l'invio non fallisce: stampa il messaggio e le istruzioni, così la
 pipeline notturna non si interrompe per una configurazione assente.
@@ -36,20 +43,22 @@ Per attivarlo (una volta sola):
 """
 
 
-def load_credentials() -> tuple[str | None, str | None]:
+def load_credentials(destinazione: str = "canale") -> tuple[str | None, str | None]:
     token = os.environ.get("TELEGRAM_BOT_TOKEN")
     chat_id = os.environ.get("TELEGRAM_CHAT_ID")
-    if token and chat_id:
-        return token, chat_id
+    channel_id = os.environ.get("TELEGRAM_CHANNEL_ID")
 
-    if CONFIG.exists():
+    if not (token and chat_id) and CONFIG.exists():
         try:
             cfg = json.loads(CONFIG.read_text(encoding="utf-8"))
             token = cfg.get("bot_token") or token
             chat_id = str(cfg.get("chat_id") or chat_id or "") or None
+            channel_id = str(cfg.get("channel_id") or channel_id or "") or None
         except Exception as e:
             print(f"⚠️ {CONFIG} non leggibile: {e}")
 
+    if destinazione == "canale" and channel_id:
+        return token, channel_id
     return token, chat_id
 
 
@@ -58,14 +67,14 @@ def is_configured() -> bool:
     return bool(token and chat_id)
 
 
-def send_message(text: str, dry_run: bool = False) -> bool:
-    """Invia il messaggio. Ritorna True se è partito davvero."""
+def send_message(text: str, dry_run: bool = False, destinazione: str = "canale") -> bool:
+    """Invia il messaggio al canale o alla chat privata. Ritorna True se è partito davvero."""
     if dry_run:
-        print("--- ANTEPRIMA MESSAGGIO ---")
+        print(f"--- ANTEPRIMA MESSAGGIO ({destinazione}) ---")
         print(text)
         return False
 
-    token, chat_id = load_credentials()
+    token, chat_id = load_credentials(destinazione)
     if not token or not chat_id:
         print(SETUP_HELP)
         print("--- Messaggio che sarebbe stato inviato ---")

@@ -198,7 +198,7 @@ def main() -> None:
 
     failed = [c for c in checks if not c.ok]
     if failed or args.always or args.dry_run:
-        telegram.send_message(format_message(checks), dry_run=args.dry_run)
+        telegram.send_message(format_message(checks), dry_run=args.dry_run, destinazione="privato")
     else:
         print("\nTutto a posto: nessun avviso inviato.")
 

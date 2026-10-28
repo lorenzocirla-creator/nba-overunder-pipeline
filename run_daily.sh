@@ -57,7 +57,8 @@ import telegram
 telegram.send_message(
     "🚨 <b>Pipeline NBA fallita</b>\n\n"
     "L'esecuzione di stamattina si è interrotta con errore.\n"
-    "Dettagli in <code>logs/log_daily.txt</code>."
+    "Dettagli in <code>logs/log_daily.txt</code>.",
+    destinazione="privato",
 )
 EOF
 fi
