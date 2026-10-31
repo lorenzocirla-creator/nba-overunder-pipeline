@@ -36,8 +36,9 @@ def previsioni_stagione() -> pd.DataFrame:
 
 
 def esporta() -> dict:
-    # stagione scorsa (outputs/predictions.csv, ferma ad aprile) + stagione in corso
-    p = pd.concat([pd.read_csv(TOTALI / "outputs" / "predictions.csv"), previsioni_stagione()], ignore_index=True)
+    # stagione scorsa (archivio fermo ad aprile) + stagione in corso. Non leggere outputs/predictions.csv:
+    # lo riscrive main_nba.py ogni mattina con stime fatte DOPO le partite, diverse da quelle mandate su Telegram
+    p = pd.concat([pd.read_csv(TOTALI / "outputs" / "predictions_2025_26.csv"), previsioni_stagione()], ignore_index=True)
     p["RUN_TIMESTAMP"] = p["RUN_TIMESTAMP"].astype(str)
     p = (p.sort_values("RUN_TIMESTAMP")
           .drop_duplicates(["GAME_DATE", "HOME_TEAM", "AWAY_TEAM"], keep="last")

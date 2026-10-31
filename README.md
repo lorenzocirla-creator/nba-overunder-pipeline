@@ -26,7 +26,6 @@ Per lanciarla a mano:
 ```bash
 python3 daily_run.py              # giornata normale
 python3 daily_run.py --full       # recupero completo dopo un'assenza lunga
-python3 daily_run.py --no-train   # salta il training
 ```
 
 ---

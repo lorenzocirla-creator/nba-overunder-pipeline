@@ -10,8 +10,7 @@ Esegue:
 4) check_missing_results.py              (se presente)
 5) build_features_2526.py                (features base: team stats, injuries, closing line, forma, roadtrip, B2B, H2H, fatigue)
 6) build_features_advanced_2526.py       (rolling avanzate + matchup features)
-7) main_nba.py                           (training modello, condizionale)
-8) predict_today.py                      (best effort)
+7-8) model_v2.py --predict               (allena e predice le partite del giorno)
 9) recommend_bets_today.py               (best effort)
 10) update_master_and_append.py          (REAL_TOTAL + append predictions)
 11) build_mae_history.py                 (MAE storico reale)
@@ -22,8 +21,6 @@ Esegue:
 Uso:
     python daily_run.py
     python daily_run.py --full
-    python daily_run.py --no-train
-    python daily_run.py --min-rows 25
 """
 
 import os
@@ -102,30 +99,11 @@ def optional(label, script_name):
 
 
 # -------------------------------------
-# Training condition
-# -------------------------------------
-def enough_training_rows(min_rows=20):
-    try:
-        df = pd.read_csv(REG_PATH, parse_dates=["GAME_DATE"])
-        today = date.today()
-        past = df[df["GAME_DATE"].dt.date < today]
-        ok = int(past["TOTAL_POINTS"].notna().sum())
-        tot = len(past)
-        log_print(f"📊 Check training rows: {ok}/{tot} non-NaN (min={min_rows})")
-        return ok >= min_rows
-    except Exception as e:
-        log_print(f"⚠️ Impossibile leggere {REG_PATH}: {e}")
-        return False
-
-
-# -------------------------------------
 # MAIN
 # -------------------------------------
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--full", action="store_true")
-    parser.add_argument("--no-train", action="store_true")
-    parser.add_argument("--min-rows", type=int, default=20)
     args = parser.parse_args()
 
     log_print("\n🏀 DAILY RUN NBA 2025–26 – START")
@@ -154,16 +132,8 @@ def main():
     # 6) Feature avanzate
     run("Build features avanzate", [str(ROOT / "build_features_advanced_2526.py")])
 
-    # 7) Training modello
-    if args.no_train:
-        log_print("⏭️  Training disattivato (--no-train).")
-    else:
-        if enough_training_rows(args.min_rows):
-            run("Esecuzione modello principale", [str(ROOT / "main_nba.py")])
-        else:
-            log_print("⏭️  Non abbastanza partite concluse: skip training.")
-
-    # 8) Predizioni del giorno
+    # 7) Predizioni del giorno. main_nba.py non gira più (31/10/2026): usa team stats con
+    # informazione dal futuro e riscriveva outputs/predictions.csv con stime post-partita.
     # model_v2 si allena anche sulle stagioni archiviate: a inizio stagione le
     # partite nuove sono zero e predict_today non avrebbe nulla su cui allenarsi.
     run("Predizioni giornata", [str(ROOT / "model_v2.py"), "--predict"], check=False)
