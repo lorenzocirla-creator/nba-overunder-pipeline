@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from pathlib import Path
 
 import requests
@@ -81,19 +82,25 @@ def send_message(text: str, dry_run: bool = False, destinazione: str = "canale")
         print(text)
         return False
 
-    try:
-        r = requests.post(
-            API.format(token=token),
-            json={"chat_id": chat_id, "text": text, "parse_mode": "HTML",
-                  "disable_web_page_preview": True},
-            timeout=TIMEOUT,
-        )
-        if r.status_code == 200:
-            print("✅ Messaggio Telegram inviato.")
-            return True
-        print(f"❌ Telegram ha risposto {r.status_code}: {r.text[:300]}")
-    except requests.RequestException as e:
-        print(f"❌ Invio Telegram fallito: {type(e).__name__}: {e}")
+    # 3 tentativi: un solo timeout di rete non deve far perdere il messaggio
+    for tentativo in range(3):
+        if tentativo:
+            time.sleep(10)
+        try:
+            r = requests.post(
+                API.format(token=token),
+                json={"chat_id": chat_id, "text": text, "parse_mode": "HTML",
+                      "disable_web_page_preview": True},
+                timeout=TIMEOUT,
+            )
+            if r.status_code == 200:
+                print("✅ Messaggio Telegram inviato.")
+                return True
+            print(f"❌ Telegram ha risposto {r.status_code}: {r.text[:300]}")
+            if r.status_code < 500:
+                return False
+        except requests.RequestException as e:
+            print(f"❌ Invio Telegram fallito: {type(e).__name__}: {e}")
     return False
 
 
