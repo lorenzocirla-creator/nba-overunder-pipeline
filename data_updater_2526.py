@@ -36,6 +36,7 @@ from config_season import (
     path_dataset_raw,
     path_schedule_raw,
     RAW_DIR,
+    USA_STATS_NBA,
 )
 
 # stats.nba.com spesso non risponde da rete residenziale: timeout corto, pochi
@@ -48,7 +49,7 @@ MAX_ATTEMPTS = 2
 # ~11 ore di soli timeout prima di arrivare al fallback.
 MAX_CONSECUTIVE_FAILURES = 3
 _consecutive_failures = 0
-_nba_api_disabled = False
+_nba_api_disabled = not USA_STATS_NBA
 MASTER_G = path_dataset_raw()   # game header master
 MASTER_S = path_schedule_raw()  # line score master
 
