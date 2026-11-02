@@ -48,13 +48,11 @@ Prima configurazione: `python3 setup_telegram.py` (guidata, un paio di minuti).
 |---|---|---|
 | **ESPN** (`site.api.espn.com`) | Calendario e risultati | Funziona, è la fonte principale |
 | **The Odds API** | Quote over/under reali | Funziona, serve una chiave |
-| **stats.nba.com** | Statistiche di squadra | **Non raggiungibile** da rete residenziale |
 | **cdn.nba.com** | Risultati live | Risponde 403 |
-| Injury report NBA (PDF) | Infortuni | Funziona a intermittenza |
 
-`stats.nba.com` va in timeout: la pipeline se ne accorge dopo pochi tentativi e
-prosegue con ESPN, invece di restare appesa per ore. Il modello di produzione non
-dipende da quella fonte.
+`stats.nba.com` (statistiche di squadra e giocatori) e il report infortuni sono stati
+tolti il 02/11/2026: `stats.nba.com` non ha mai risposto, né dal Mac né dal cloud, e il
+modello di produzione non usava nulla di quello che fornivano.
 
 ### Chiavi e credenziali
 
@@ -152,7 +150,7 @@ config_season.py        stagione corrente: date e nomi dei file
 daily_run.py            orchestratore della pipeline
 run_daily.sh            avvio da launchd, con recupero dei giorni saltati
 
-data_updater_2526.py    aggiorna i master (NBA, con fallback ESPN)
+data_updater_2526.py    aggiorna i master dal calendario ESPN
 build_dataset_regular_2025_26.py   costruisce il dataset partite
 build_features_2526.py             feature di base
 build_features_advanced_2526.py    feature avanzate

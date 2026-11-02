@@ -16,9 +16,5 @@ graphviz==0.21
 
 # IO / Utils
 requests==2.32.3
-nba_api==1.10.2
-nbainjuries==1.0.0
 tqdm==4.66.5
 aiohttp==3.13.2
-jpype1==1.5.2
-PyPDF2==3.0.1

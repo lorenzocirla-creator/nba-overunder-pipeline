@@ -3,10 +3,8 @@
 Orchestratore completo feature 2025–26.
 Esegue in sequenza:
 - build dataset base
-- build/merge team stats (PACE, OFF/DEF/NET, TS, EFG)
 - add_backtoback, add_roadtrip, add_forma, add_context_features,
   add_rest_days, add_h2h, add_fatigue
-- (opzionale) injuries: download_injuries + build_player_stats + add_injuries
 - (opzionale) add_closing_line
 
 Esecuzione:
@@ -16,9 +14,8 @@ Esecuzione:
 import sys
 import subprocess
 from pathlib import Path
-import pandas as pd
 from config_season_2526 import FEATURE_FLAGS
-from config_season import SEASON_TAG, USA_STATS_NBA
+from config_season import SEASON_TAG
 # from features.add_rolling_pace import add_rolling_pace
 
 ROOT = Path(__file__).resolve().parent
@@ -35,12 +32,10 @@ else:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 DATASET = DATA_DIR / f"dataset_regular_{SEASON_TAG}.csv"
-TEAM_STATS_PATH = DATA_DIR / f"team_stats_{SEASON_TAG}.csv"
 
 FEATURES = ROOT / "features"
 
 # ---- Toggle step opzionali ----
-RUN_INJURIES = True       # False per saltare injuries
 RUN_CLOSING  = True       # True se vuoi aggiungere le quote (script pronto)
 
 def run(label, cmd_list):
@@ -51,14 +46,6 @@ def run(label, cmd_list):
         sys.exit(rc)
     print(f"✅ {label} completato")
 
-def _file_has_rows(path: Path) -> bool:
-    if not path.exists():
-        return False
-    try:
-        return len(pd.read_csv(path)) > 0
-    except Exception:
-        return False
-
 def main():
     # 0) Base dataset
     if not DATASET.exists():
@@ -66,27 +53,10 @@ def main():
     else:
         print("ℹ️ Dataset base esiste già:", DATASET)
 
-    # 1) Team stats (PACE/OFF/DEF/NET/TS/EFG), da stats.nba.com
-    if not USA_STATS_NBA:
-        print("⏭️  Team stats saltate (USA_STATS_NBA=False)")
-    elif _file_has_rows(TEAM_STATS_PATH):
-        print(f"✅ File team_stats già presente ({TEAM_STATS_PATH}), uso dati esistenti.")
-    else:
-        print(f"⚙️ Rigenero team_stats perché mancante o vuoto → {TEAM_STATS_PATH}")
-        # Non bloccante: le team stats arrivano da stats.nba.com, che spesso non
-        # risponde. Il modello di produzione (model_v2) non le usa, quindi la
-        # pipeline deve proseguire anche senza.
-        rc = subprocess.run([sys.executable, str(ROOT / "data_teamstats_2526.py")]).returncode
-        if rc != 0:
-            print("⚠️ Team stats non disponibili: proseguo senza.")
+    # Team stats e infortuni tolti il 02/11/2026: venivano da stats.nba.com, che non ha mai
+    # risposto, e model_v2 non li usa.
 
-    # ora effettua il merge delle team stats sul dataset
-    if USA_STATS_NBA:
-        rc = subprocess.run([sys.executable, str(FEATURES / "add_team_stats.py")]).returncode
-        if rc != 0:
-            print("⚠️ Merge team stats fallito: proseguo senza queste feature.")
-
-    # 2) Calendario e forma
+    # 1) Calendario e forma
     run("Add back-to-back",   [str(FEATURES / "add_backtoback.py")])
     run("Add roadtrip",       [str(FEATURES / "add_roadtrip.py")])
     run("Add forma/difesa",   [str(FEATURES / "add_forma.py")])
@@ -95,16 +65,7 @@ def main():
     run("Add H2H",            [str(FEATURES / "add_h2h.py")])
     run("Add fatigue",        [str(FEATURES / "add_fatigue.py")])
 
-    # 3) Injuries (opzionale ma consigliato)
-    if RUN_INJURIES:
-        run("Download injuries",      [str(ROOT / "download_injuries_2526.py")])
-        if USA_STATS_NBA:
-            run("Build player stats",     [str(FEATURES / "build_player_stats_2526.py")])
-        run("Add injuries impact",    [str(FEATURES / "add_injuries.py")])
-    else:
-        print("⏭️  Injuries DISABILITATO (RUN_INJURIES=False)")
-
-    # 4) Closing line (opzionale)
+    # 2) Closing line (opzionale)
     if RUN_CLOSING:
         run("Add closing line", [str(FEATURES / "add_closing_line.py")])
     else:

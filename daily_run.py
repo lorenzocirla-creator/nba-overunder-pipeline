@@ -8,7 +8,7 @@ Esegue:
 2) build_dataset_regular_2025_26.py      (ricostruisce dataset base)
 3) manual_results_patch.py               (se presente)
 4) check_missing_results.py              (se presente)
-5) build_features_2526.py                (features base: team stats, injuries, closing line, forma, roadtrip, B2B, H2H, fatigue)
+5) build_features_2526.py                (features base: closing line, forma, roadtrip, B2B, H2H, fatigue)
 6) build_features_advanced_2526.py       (rolling avanzate + matchup features)
 7-8) model_v2.py --predict               (allena e predice le partite del giorno)
 9) recommend_bets_today.py               (best effort)

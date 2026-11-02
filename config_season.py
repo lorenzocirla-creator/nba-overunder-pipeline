@@ -22,11 +22,6 @@ SEASON_END = dt.date(2027, 4, 15)
 # Stagioni precedenti disponibili come storico di training (dalla più recente)
 PREV_SEASON_TAGS = ["2025_26"]
 
-# stats.nba.com non ha mai risposto, né dal Mac né dal cloud (verificato su tutte le corse
-# fino al 02/11/2026), e model_v2 non usa nulla di quello che fornisce (team stats, player
-# stats): interrogarlo costava ~10 minuti di timeout a ogni corsa. True per riprovarlo.
-USA_STATS_NBA = False
-
 # === Cartelle ===
 ROOT = Path(__file__).resolve().parent
 DATA_DIR = ROOT / "dati"
@@ -60,18 +55,6 @@ def path_schedule_full() -> Path:
 
 def path_odds() -> Path:
     return DATA_DIR / f"odds_{SEASON_TAG}.csv"
-
-
-def path_injuries() -> Path:
-    return DATA_DIR / f"injuries_{SEASON_TAG}.csv"
-
-
-def path_team_stats() -> Path:
-    return DATA_DIR / f"team_stats_{SEASON_TAG}.csv"
-
-
-def path_player_stats() -> Path:
-    return DATA_DIR / f"player_stats_{SEASON_TAG}.csv"
 
 
 def historical_datasets() -> list[Path]:

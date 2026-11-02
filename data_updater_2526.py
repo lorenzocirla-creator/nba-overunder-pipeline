@@ -5,27 +5,24 @@ Scarica e aggiorna i dati giorno-per-giorno per la stagione 2025–26 (NBA).
 - OGGI: schedule (game_header, line_score se già disponibile)
 
 Strategia:
-1) Fonte primaria: nba_api.stats.endpoints.scoreboardv2 (game_header + line_score)
-2) Fallback robusto: file locale dati/schedule_full_2025_26.csv (schedule ESPN completo)
-   - valida per tutta la stagione 2025-26, passato/presente/futuro
-3) Normalizzazione rigorosa degli ID e append con dedupe nei master:
+1) Fonte: file locale dati/schedule_full_2025_26.csv (schedule ESPN completo)
+   - valida per tutta la stagione, passato/presente/futuro
+   (stats.nba.com tolto il 02/11/2026: non ha mai risposto, né dal Mac né dal cloud)
+2) Normalizzazione rigorosa degli ID e append con dedupe nei master:
    - dati/dataset_raw_2025_26.csv  (GH)
    - dati/schedule_raw_2025_26.csv (LS)
-4) Autoripresa: se il master ha buchi tra ultima data e oggi, riempie i giorni mancanti
+3) Autoripresa: se il master ha buchi tra ultima data e oggi, riempie i giorni mancanti
 
 ⚠️ FIX: non scrivere mai 0–0 per partite future o non-finali.
 """
 
 import sys
-import time
 import datetime as dt
 from pathlib import Path
 from typing import Tuple, Optional
 
 import pandas as pd
 import numpy as np
-from requests.exceptions import ReadTimeout, ConnectionError
-from nba_api.stats.endpoints import scoreboardv2
 
 # ================
 # Config stagione
@@ -36,20 +33,8 @@ from config_season import (
     path_dataset_raw,
     path_schedule_raw,
     RAW_DIR,
-    USA_STATS_NBA,
 )
 
-# stats.nba.com spesso non risponde da rete residenziale: timeout corto, pochi
-# tentativi. Il recupero dei dati è garantito dal fallback ESPN (schedule_full).
-DEFAULT_TIMEOUT = 20
-MAX_ATTEMPTS = 2
-
-# Circuit breaker: dopo troppi giorni consecutivi falliti si smette di interrogare
-# l'API NBA per il resto del run. Senza questo, un backfill di 142 giorni impiega
-# ~11 ore di soli timeout prima di arrivare al fallback.
-MAX_CONSECUTIVE_FAILURES = 3
-_consecutive_failures = 0
-_nba_api_disabled = not USA_STATS_NBA
 MASTER_G = path_dataset_raw()   # game header master
 MASTER_S = path_schedule_raw()  # line score master
 
@@ -62,25 +47,6 @@ SCHEDULE_FULL = ROOT / "dati" / f"schedule_full_{SEASON_TAG}.csv"
 
 # cache in memoria per schedule_full
 _SCHED_FULL: Optional[pd.DataFrame] = None
-
-# ================
-# Patch nba_api: ignora WinProbability mancante (bug noto)
-# ================
-import nba_api.stats.endpoints.scoreboardv2 as sbv2_module
-_old_load_response = sbv2_module.ScoreboardV2.load_response
-
-
-def _patched_load_response(self):
-    try:
-        _old_load_response(self)
-    except KeyError as e:
-        if str(e) == "'WinProbability'":
-            print("⚠️  WinProbability non trovato, ignorato (bug noto nba_api)")
-        else:
-            raise
-
-
-sbv2_module.ScoreboardV2.load_response = _patched_load_response
 
 # ================
 # Helpers base
@@ -182,62 +148,7 @@ def _parse_master_last_date() -> Optional[dt.date]:
 
 
 # ================
-# Fonte 1: NBA API (scoreboardv2)
-# ================
-
-
-def safe_scoreboard_request(day: dt.date) -> Optional[scoreboardv2.ScoreboardV2]:
-    global _consecutive_failures, _nba_api_disabled
-
-    if _nba_api_disabled:
-        return None
-
-    for attempt in range(MAX_ATTEMPTS):
-        try:
-            sb = scoreboardv2.ScoreboardV2(
-                game_date=day.strftime("%m/%d/%Y"),
-                timeout=DEFAULT_TIMEOUT,
-            )
-            _consecutive_failures = 0
-            return sb
-        except (ReadTimeout, ConnectionError) as e:
-            print(f"⚠️  Timeout NBA API ({type(e).__name__}) – tentativo {attempt+1}/{MAX_ATTEMPTS}")
-            if attempt < MAX_ATTEMPTS - 1:
-                time.sleep(3)
-        except Exception as e:
-            print(f"⚠️  Errore NBA API: {e}")
-            break
-
-    _consecutive_failures += 1
-    if _consecutive_failures >= MAX_CONSECUTIVE_FAILURES and not _nba_api_disabled:
-        _nba_api_disabled = True
-        print(f"🚫 NBA API non raggiungibile ({_consecutive_failures} giorni falliti di fila): "
-              f"disattivata per questo run, si prosegue con il calendario ESPN.")
-    return None
-
-
-def fetch_gh_nba_api(day: dt.date) -> pd.DataFrame:
-    sb = safe_scoreboard_request(day)
-    if sb is None:
-        return pd.DataFrame(columns=GH_COLS)
-    df = sb.game_header.get_data_frame()
-    if df.empty:
-        return pd.DataFrame(columns=GH_COLS)
-    return _normalize_gh(df)
-
-
-def fetch_ls_nba_api(day: dt.date) -> pd.DataFrame:
-    sb = safe_scoreboard_request(day)
-    if sb is None:
-        return pd.DataFrame(columns=LS_COLS)
-    df = sb.line_score.get_data_frame()
-    if df.empty:
-        return pd.DataFrame(columns=LS_COLS)
-    return _normalize_ls(df)
-
-
-# ================
-# Fonte 2: schedule_full_2025_26.csv (fallback custom)
+# Fonte: schedule_full (calendario ESPN)
 # ================
 
 TEAM_CODE_TO_ID = {
@@ -418,17 +329,12 @@ def gh_ls_from_schedule_full(day: dt.date) -> Tuple[pd.DataFrame, pd.DataFrame]:
 
 
 # ================
-# Fetch wrapper con fallback
+# Fetch wrapper
 # ================
 
 
 def fetch_gh(day: dt.date) -> pd.DataFrame:
-    # 1) NBA API
-    gh = fetch_gh_nba_api(day)
-    if not gh.empty:
-        return gh
-
-    # 2) schedule_full (valido per tutta la stagione, passato/presente/futuro)
+    # schedule_full (valido per tutta la stagione, passato/presente/futuro)
     if in_season(day):
         gh_sched, _ = gh_ls_from_schedule_full(day)
         return gh_sched
@@ -437,14 +343,7 @@ def fetch_gh(day: dt.date) -> pd.DataFrame:
 
 
 def fetch_ls(day: dt.date) -> pd.DataFrame:
-    # 1) NBA API
-    ls = fetch_ls_nba_api(day)
-    if not ls.empty:
-        # Se NBA API ha PTS non tutti NaN, usiamo quelli
-        if "PTS" in ls.columns and not pd.to_numeric(ls["PTS"], errors="coerce").isna().all():
-            return ls
-
-    # 2) schedule_full (solo struttura, PTS NaN)
+    # schedule_full (solo struttura, PTS NaN)
     if in_season(day):
         _, ls_sched = gh_ls_from_schedule_full(day)
         return ls_sched
