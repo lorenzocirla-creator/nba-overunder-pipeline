@@ -55,6 +55,7 @@ def esporta() -> dict:
         aperte = p["TOTAL_POINTS"].isna()
         p.loc[aperte, "linea"] = recenti[aperte].fillna(p.loc[aperte, "linea"])
     oggi = pd.Timestamp.now(tz="Europe/Rome").strftime("%Y-%m-%d")
+    from config_season import SEASON_START
 
     # quanto il totale finale si discosta dalla linea dei bookmaker (stagione 2025/26): serve a dire,
     # per ogni linea alternativa, quante volte vince l'over e l'under e quindi la quota minima che
@@ -109,7 +110,8 @@ def esporta() -> dict:
         "ultima_previsione": str(p["RUN_TIMESTAMP"].max()),
         "prossime": [riga(x) for x in prossime.itertuples()],
         "recenti": [riga(x) for x in giocate.tail(40).iloc[::-1].itertuples()],
-        "stagione": riassunto(confronto),
+        # solo la stagione in corso: confronto contiene anche l'archivio 2025/26
+        "stagione": riassunto(confronto[confronto["GAME_DATE"] >= SEASON_START.isoformat()]),
         "ultimi_30_giorni": riassunto(confronto[confronto["GAME_DATE"] >= (pd.Timestamp(oggi) - pd.Timedelta(days=30)).strftime("%Y-%m-%d")]),
         "serie": serie,
         # verifica di settembre 2026 su 1235 partite (memoria del progetto): il modello non batte la linea
