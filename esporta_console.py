@@ -73,14 +73,19 @@ def esporta() -> dict:
                         "quota_min_under": round(1 / p_under, 2) if p_under else None})
         return out
 
+    def segnalata(stima, linea) -> str | None:
+        """"sopra"/"sotto" se la stima si discosta dalla linea di almeno SOGLIA_SEGNALAZIONE punti."""
+        if linea is None or pd.isna(stima) or abs(stima - linea) < SOGLIA_SEGNALAZIONE:
+            return None
+        return "sopra" if stima > linea else "sotto"
+
     def riga(x) -> dict:
         linea = None if pd.isna(x.linea) else float(x.linea)
         return {"data": x.GAME_DATE, "casa": x.HOME_TEAM, "fuori": x.AWAY_TEAM,
                 "stima": None if pd.isna(x.PREDICTED_POINTS) else round(float(x.PREDICTED_POINTS), 1),
                 "linea": linea,
                 "risultato": None if pd.isna(x.TOTAL_POINTS) else int(x.TOTAL_POINTS),
-                "segnalata": bool(linea is not None and pd.notna(x.PREDICTED_POINTS)
-                                  and x.PREDICTED_POINTS - linea >= SOGLIA_SEGNALAZIONE),
+                "segnalata": segnalata(x.PREDICTED_POINTS, linea),
                 "alternative": alternative(linea) if linea is not None and pd.isna(x.TOTAL_POINTS) else None}
 
     prossime = p[(p["GAME_DATE"] >= oggi) & p["TOTAL_POINTS"].isna()]
@@ -96,10 +101,13 @@ def esporta() -> dict:
                 "errore_linea": round(float(d["err_linea"].mean()), 2),
                 "modello_piu_vicino": round(float((d["err_modello"] < d["err_linea"]).mean()), 3)}
 
-    # com'è andata finora quando la stima era almeno SOGLIA_SEGNALAZIONE punti sopra la linea
-    sopra = confronto[confronto["PREDICTED_POINTS"] - confronto["linea"] >= SOGLIA_SEGNALAZIONE]
-    storico_segnalate = {"partite": len(sopra),
-                         "over_vince": round(float((sopra["TOTAL_POINTS"] > sopra["linea"]).mean()), 3) if len(sopra) else None}
+    # com'è andata finora quando la stima era almeno SOGLIA_SEGNALAZIONE punti sopra o sotto la linea
+    scarto = confronto["PREDICTED_POINTS"] - confronto["linea"]
+    sopra, sotto = confronto[scarto >= SOGLIA_SEGNALAZIONE], confronto[scarto <= -SOGLIA_SEGNALAZIONE]
+    storico_segnalate = {
+        "sopra": {"partite": len(sopra), "vince": round(float((sopra["TOTAL_POINTS"] > sopra["linea"]).mean()), 3) if len(sopra) else None},
+        "sotto": {"partite": len(sotto), "vince": round(float((sotto["TOTAL_POINTS"] < sotto["linea"]).mean()), 3) if len(sotto) else None},
+    }
 
     # errore medio mobile sulle ultime 50 partite (per il grafico)
     serie = []

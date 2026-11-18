@@ -58,15 +58,17 @@ def build_message(target: date) -> str | None:
     giorno = target.strftime("%d/%m/%Y")
     righe = [f"🏀 <b>NBA — {giorno}</b>", f"{len(df)} partite\n"]
 
-    # partite con la stima almeno SOGLIA_SEGNALAZIONE punti sopra la linea dei bookmaker, in cima
+    # partite con la stima almeno SOGLIA_SEGNALAZIONE punti sopra (🔥) o sotto (🧊) la linea dei bookmaker, in cima
     if line_col == "MARKET_LINE":
         scarto = df["PREDICTED_POINTS"] - pd.to_numeric(df["MARKET_LINE"], errors="coerce")
-        segnalate = df[scarto >= SOGLIA_SEGNALAZIONE]
-        if not segnalate.empty:
-            righe.append(f"🔥 <b>Modello almeno {SOGLIA_SEGNALAZIONE:.0f} punti sopra la linea</b>")
+        for icona, dove, segnalate in [("🔥", "sopra", df[scarto >= SOGLIA_SEGNALAZIONE]),
+                                       ("🧊", "sotto", df[scarto <= -SOGLIA_SEGNALAZIONE])]:
+            if segnalate.empty:
+                continue
+            righe.append(f"{icona} <b>Modello almeno {SOGLIA_SEGNALAZIONE:.0f} punti {dove} la linea</b>")
             for _, r in segnalate.iterrows():
                 righe.append(f"• <b>{r['AWAY_TEAM']} @ {r['HOME_TEAM']}</b>: stima {r['PREDICTED_POINTS']:.1f}, "
-                             f"linea {r['MARKET_LINE']:.1f} (+{r['PREDICTED_POINTS'] - r['MARKET_LINE']:.1f})")
+                             f"linea {r['MARKET_LINE']:.1f} ({r['PREDICTED_POINTS'] - r['MARKET_LINE']:+.1f})")
             righe.append("")
 
     for _, r in df.iterrows():
@@ -81,8 +83,8 @@ def build_message(target: date) -> str | None:
                 segno = "OVER" if delta > 0 else "UNDER"
                 etichetta = "quota" if line_col == "MARKET_LINE" else "stima interna"
                 riga += f" ({etichetta} {line:.1f} → {segno} {abs(delta):.1f})"
-                if line_col == "MARKET_LINE" and delta >= SOGLIA_SEGNALAZIONE:
-                    riga = "🔥 " + riga[2:]
+                if line_col == "MARKET_LINE" and abs(delta) >= SOGLIA_SEGNALAZIONE:
+                    riga = ("🔥 " if delta > 0 else "🧊 ") + riga[2:]
         righe.append(riga)
 
     # Raccomandazioni, se lo step le ha prodotte
