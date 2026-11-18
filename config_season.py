@@ -19,6 +19,9 @@ TARGET_SEASON = "2026-27"       # usato nelle chiamate alle API NBA
 SEASON_START = dt.date(2026, 10, 20)   # opening night: 3 partite il 20/10
 SEASON_END = dt.date(2027, 4, 15)
 
+# Partite segnalate (Telegram e console): stima del modello almeno tanti punti sopra la linea
+SOGLIA_SEGNALAZIONE = 10.0
+
 # Stagioni precedenti disponibili come storico di training (dalla più recente)
 PREV_SEASON_TAGS = ["2025_26"]
 

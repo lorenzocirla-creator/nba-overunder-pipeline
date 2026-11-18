@@ -25,7 +25,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from config_season import PRED_DIR, season_progress
+from config_season import PRED_DIR, SOGLIA_SEGNALAZIONE, season_progress
 import telegram
 
 ROOT = Path(__file__).resolve().parent
@@ -58,6 +58,17 @@ def build_message(target: date) -> str | None:
     giorno = target.strftime("%d/%m/%Y")
     righe = [f"🏀 <b>NBA — {giorno}</b>", f"{len(df)} partite\n"]
 
+    # partite con la stima almeno SOGLIA_SEGNALAZIONE punti sopra la linea dei bookmaker, in cima
+    if line_col == "MARKET_LINE":
+        scarto = df["PREDICTED_POINTS"] - pd.to_numeric(df["MARKET_LINE"], errors="coerce")
+        segnalate = df[scarto >= SOGLIA_SEGNALAZIONE]
+        if not segnalate.empty:
+            righe.append(f"🔥 <b>Modello almeno {SOGLIA_SEGNALAZIONE:.0f} punti sopra la linea</b>")
+            for _, r in segnalate.iterrows():
+                righe.append(f"• <b>{r['AWAY_TEAM']} @ {r['HOME_TEAM']}</b>: stima {r['PREDICTED_POINTS']:.1f}, "
+                             f"linea {r['MARKET_LINE']:.1f} (+{r['PREDICTED_POINTS'] - r['MARKET_LINE']:.1f})")
+            righe.append("")
+
     for _, r in df.iterrows():
         match = f"{r['AWAY_TEAM']} @ {r['HOME_TEAM']}"
         pred = r["PREDICTED_POINTS"]
@@ -70,6 +81,8 @@ def build_message(target: date) -> str | None:
                 segno = "OVER" if delta > 0 else "UNDER"
                 etichetta = "quota" if line_col == "MARKET_LINE" else "stima interna"
                 riga += f" ({etichetta} {line:.1f} → {segno} {abs(delta):.1f})"
+                if line_col == "MARKET_LINE" and delta >= SOGLIA_SEGNALAZIONE:
+                    riga = "🔥 " + riga[2:]
         righe.append(riga)
 
     # Raccomandazioni, se lo step le ha prodotte

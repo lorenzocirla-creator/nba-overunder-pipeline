@@ -55,7 +55,7 @@ def esporta() -> dict:
         aperte = p["TOTAL_POINTS"].isna()
         p.loc[aperte, "linea"] = recenti[aperte].fillna(p.loc[aperte, "linea"])
     oggi = pd.Timestamp.now(tz="Europe/Rome").strftime("%Y-%m-%d")
-    from config_season import SEASON_START
+    from config_season import SEASON_START, SOGLIA_SEGNALAZIONE
 
     # quanto il totale finale si discosta dalla linea dei bookmaker (stagione 2025/26): serve a dire,
     # per ogni linea alternativa, quante volte vince l'over e l'under e quindi la quota minima che
@@ -79,6 +79,8 @@ def esporta() -> dict:
                 "stima": None if pd.isna(x.PREDICTED_POINTS) else round(float(x.PREDICTED_POINTS), 1),
                 "linea": linea,
                 "risultato": None if pd.isna(x.TOTAL_POINTS) else int(x.TOTAL_POINTS),
+                "segnalata": bool(linea is not None and pd.notna(x.PREDICTED_POINTS)
+                                  and x.PREDICTED_POINTS - linea >= SOGLIA_SEGNALAZIONE),
                 "alternative": alternative(linea) if linea is not None and pd.isna(x.TOTAL_POINTS) else None}
 
     prossime = p[(p["GAME_DATE"] >= oggi) & p["TOTAL_POINTS"].isna()]
@@ -93,6 +95,11 @@ def esporta() -> dict:
         return {"partite": len(d), "errore_modello": round(float(d["err_modello"].mean()), 2),
                 "errore_linea": round(float(d["err_linea"].mean()), 2),
                 "modello_piu_vicino": round(float((d["err_modello"] < d["err_linea"]).mean()), 3)}
+
+    # com'è andata finora quando la stima era almeno SOGLIA_SEGNALAZIONE punti sopra la linea
+    sopra = confronto[confronto["PREDICTED_POINTS"] - confronto["linea"] >= SOGLIA_SEGNALAZIONE]
+    storico_segnalate = {"partite": len(sopra),
+                         "over_vince": round(float((sopra["TOTAL_POINTS"] > sopra["linea"]).mean()), 3) if len(sopra) else None}
 
     # errore medio mobile sulle ultime 50 partite (per il grafico)
     serie = []
@@ -114,6 +121,8 @@ def esporta() -> dict:
         "stagione": riassunto(confronto[confronto["GAME_DATE"] >= SEASON_START.isoformat()]),
         "ultimi_30_giorni": riassunto(confronto[confronto["GAME_DATE"] >= (pd.Timestamp(oggi) - pd.Timedelta(days=30)).strftime("%Y-%m-%d")]),
         "serie": serie,
+        "soglia_segnalazione": SOGLIA_SEGNALAZIONE,
+        "storico_segnalate": storico_segnalate,
         # verifica di settembre 2026 su 1235 partite (memoria del progetto): il modello non batte la linea
         "partite_distribuzione": int(len(scarti)),
         "verdetto": {"partite": 1235, "errore_modello": 15.29, "errore_linea": 14.58, "correlazione_errori": 0.962},
